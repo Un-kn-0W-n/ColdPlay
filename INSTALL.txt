@@ -1,0 +1,40 @@
+ColdPlay for Minecraft 1.8.9
+
+Download ColdPlay-1.8.9.zip from the repository's Releases page:
+https://github.com/Un-kn-0W-n/ColdPlay/releases/latest
+
+Installation (64-bit Windows, Linux, or Intel macOS; Java 8)
+1. Launch vanilla Minecraft 1.8.9 once to download its assets, then close the game
+   and launcher. Sign in using your own Minecraft account.
+2. Extract ColdPlay-1.8.9.zip into your Minecraft game directory. On Windows the
+   default is %APPDATA%\.minecraft; on Linux ~/.minecraft; on macOS it is
+   ~/Library/Application Support/minecraft.
+3. Confirm versions/ColdPlay-1.8.9 contains BOTH ColdPlay-1.8.9.jar and
+   ColdPlay-1.8.9.json. Keep their names unchanged. The standalone JAR download
+   also needs the matching JSON from this repository's distribution folder.
+4. Reopen the official launcher, enable Modded versions in Installations, create
+   an installation, and select ColdPlay-1.8.9. Use a 64-bit Java 8 runtime.
+   On macOS, add -XstartOnFirstThread to that installation's JVM arguments.
+5. Play. Press Right Shift to open the client GUI. Open Settings to load one of
+   the six shared profiles. Back up existing profiles before replacing them.
+
+ColdPlay is a complete client version, not a Forge/Fabric mod. Do not place the
+JAR in mods or replace the vanilla 1.8.9 JAR. If you use a separate game directory,
+copy the coldplay/configs folder there as well. ARM and 32-bit runtimes are not
+included in this download.
+
+The download includes the client, its libraries, built-in game assets, and six
+shared configuration profiles. Account/proxy features remain available; saved
+accounts, tokens, proxy lists, external resource/shader packs, and runtime data
+are not included. Login and personal settings stay in your own game directory.
+
+Building from source
+Install a Java 8 JDK and run gradlew.bat clean verifyRelease on Windows, or
+./gradlew clean verifyRelease on Linux/macOS. Outputs are in build/release.
+Use gradlew.bat run for development after downloading vanilla 1.8.9 assets.
+Override the asset location with -PmcAssetsDir=<path to .minecraft/assets>.
+The shared configs remain in run/coldplay/configs in the source repository.
+
+The rendering backend incorporates code and inspiration from lwjgl3ify
+(https://github.com/GTNewHorizons/lwjgl3ify) and MCLWJGL3
+(https://github.com/Verschwiegener/MCLWJGL3).

@@ -1,0 +1,336 @@
+{
+  "modules": {
+    "AimAssist": {
+      "enabled": false,
+      "keyBind": 23,
+      "settings": {
+        "Players": true,
+        "Mobs": false,
+        "Animals": false,
+        "Invisible": false,
+        "NPCs": false,
+        "Range": 4.5,
+        "FOV": 31.0,
+        "Level": "Aggressive"
+      }
+    },
+    "KillAura": {
+      "enabled": true,
+      "keyBind": 19,
+      "settings": {
+        "Players": true,
+        "Mobs": false,
+        "Animals": false,
+        "Invisible": false,
+        "NPCs": false,
+        "Range": 3.0,
+        "FOV": 164.0,
+        "Rotation Speed": [
+          11.0,
+          26.0
+        ],
+        "Raytrace": "Complex",
+        "Render": true,
+        "Min CPS": 8.0,
+        "Max CPS": 12.0,
+        "Auto Off": true
+      }
+    },
+    "AutoBlock": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Mode": "Hypixel",
+        "BlockTicks": 5.0,
+        "ReleaseTicks": 2.0,
+        "Auto Off": false
+      }
+    },
+    "Breaker": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Range": 4.5,
+        "Ignore Own Bed": true,
+        "Progress Bar": true,
+        "Highlight": true,
+        "Highlight Color": -16711836,
+        "Auto Off": false
+      }
+    },
+    "WTap": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Chance": 75.0,
+        "STap": true,
+        "Distance": 3.0
+      }
+    },
+    "AutoThrow": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Range": 4.5,
+        "Delay": [
+          500.0,
+          900.0
+        ],
+        "Legit": true,
+        "Throwables": {
+          "FishingRod": true,
+          "SnowBall": true,
+          "Egg": true
+        },
+        "Auto Off": false
+      }
+    },
+    "AutoClicker": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Button": "Left",
+        "Min CPS": 6.0,
+        "Max CPS": 9.0
+      }
+    },
+    "AntiMiss": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {}
+    },
+    "Reach": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Amount": 0.2
+      }
+    },
+    "Sprint": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {}
+    },
+    "BridgeAssist": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "EdgeDistance": 0.26
+      }
+    },
+    "Scaffold": {
+      "enabled": false,
+      "keyBind": 34,
+      "settings": {
+        "AutoSwitch": true,
+        "KeepY": false,
+        "Pitch": 87.0,
+        "Mode": "Grim",
+        "Auto Off": false
+      }
+    },
+    "Clutch": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Mode": "Polar",
+        "Auto Off": false
+      }
+    },
+    "InvMove": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {}
+    },
+    "Velocity": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Chance": 75.0
+      }
+    },
+    "HUD": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "ArrayList": true,
+        "Suffixes": true,
+        "Position": "Top Left",
+        "Watermark": true,
+        "Animations": true
+      }
+    },
+    "BlockCounter": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {}
+    },
+    "FullBright": {
+      "enabled": true,
+      "keyBind": 48,
+      "settings": {}
+    },
+    "BlockESP": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Range": 80.0,
+        "Filled": true,
+        "Outline": true,
+        "Color": -3626496,
+        "Opacity": 81.0,
+        "Beds": true,
+        "Bed Color": -50116
+      }
+    },
+    "EntityESP": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "ESP": true,
+        "Mode": "2D",
+        "Thickness": 1.0,
+        "Filled": true,
+        "Opacity": 93.0,
+        "Tracers": true,
+        "Tracer Mode": "Arrows",
+        "Tracer Width": 0.5,
+        "Arrow Size": 6.0,
+        "Arrow Radius": 30.0,
+        "NameTags": true,
+        "Players": true,
+        "Mobs": false,
+        "Animals": true,
+        "Invisible": false,
+        "Range": 96.0,
+        "Player Color": -1,
+        "Mob Color": -50116,
+        "Animal Color": -11477916
+      }
+    },
+    "TargetHUD": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Show Model": true,
+        "Health Text": true,
+        "Held + Armor": true,
+        "Players": true,
+        "Mobs": true,
+        "Animals": false,
+        "Scale": 1.0,
+        "Offset Y": 10.0,
+        "Hold Time": 1.5
+      }
+    },
+    "Trajectory": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Items": {
+          "Bow": true,
+          "SnowBall": true,
+          "Egg": true,
+          "EnderPearl": true
+        },
+        "Color": -10172161,
+        "Target Color": -50116
+      }
+    },
+    "ChestStealer": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Delay": [
+          75.0,
+          140.0
+        ],
+        "Auto Close": true,
+        "Auto Off": false
+      }
+    },
+    "AutoTool": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Tools": true,
+        "Weapons": true,
+        "SwitchBack": true
+      }
+    },
+    "FastPlace": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Delay": 0.0
+      }
+    },
+    "MiddleClickFriend": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {}
+    },
+    "InvManager": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Delay": [
+          100.0,
+          200.0
+        ],
+        "AutoArmor": true,
+        "ArmorInstant": true,
+        "AutoHotBar": true,
+        "HotbarInstant": true,
+        "Layout": {
+          "slots": [
+            [
+              "@cat:Sword"
+            ],
+            [
+              "@cat:Tools"
+            ],
+            [
+              "@cat:Tools"
+            ],
+            [
+              "@cat:Tools"
+            ],
+            [
+              "minecraft:golden_apple:0"
+            ],
+            [
+              "minecraft:fire_charge:0"
+            ],
+            [
+              "@cat:Blocks"
+            ],
+            [
+              "@cat:Blocks"
+            ],
+            [
+              "@cat:Blocks"
+            ]
+          ],
+          "excluded": [
+            "minecraft:egg:0"
+          ]
+        },
+        "Cleaner": true,
+        "CleanerInstant": true,
+        "Items": {
+          "@cat:Armor": "DROP",
+          "@cat:Blocks": "DROP",
+          "@cat:Bow": "DROP",
+          "@cat:Other": "IGNORE",
+          "@cat:Potion": "DROP",
+          "@cat:Sword": "DROP",
+          "@cat:Throwables": "DROP",
+          "@cat:Tools": "DROP"
+        },
+        "Inventory": true,
+        "Auto Close": true
+      }
+    }
+  }
+}
