@@ -18,21 +18,22 @@ import java.util.List;
 
 /** Profile management window. ClickGuiScreen owns dismissal and input priority. */
 public class ConfigWindow {
-    private static final int MIN_WIDTH = 176;           // floor: keeps the name field + Create comfortable
+    private static final int MIN_WIDTH = 200;           // floor: leaves the name field real room beside Create
     private static final int HEADER = ClickGuiScreen.HEADER_HEIGHT;
     private static final int ROW_H = ClickGuiScreen.ROW_HEIGHT;
-    private static final int NAME_ROW_H = 22;           // name field + create button row
-    private static final int FIELD_H = 14;              // text field / create button height
+    private static final int NAME_ROW_H = 28;           // name field + create button row
+    private static final int FIELD_H = 16;              // text field / create button height
     private static final int BTN_H = ROW_H - 4;          // per-row Upd/Ren/Del button height
-    private static final int PAD = 4;                   // outer left/right/bottom padding
-    private static final int BTN_GAP = 2;                // gap between adjacent small buttons
-    private static final int CREATE_W = 40;
+    private static final int PAD = 6;                   // outer left/right/bottom padding
+    private static final int BTN_GAP = 2;                // floor for the gap between adjacent action buttons
+    private static final int FIELD_GAP = 6;              // gap between the name field and Create
+    private static final int CREATE_FALLBACK_W = 50;     // scale-1 width, used only if the font is absent
     private static final int BTN_TEXT_PAD = 4;           // horizontal text padding inside an action button
-    private static final int BTN_BOT_PAD = 3;            // gap below the button line inside a row
+    private static final int BTN_BOT_PAD = 5;            // gap below the button line inside a row
     private static final int PROFILE_ROW_H = ROW_H + BTN_H + BTN_BOT_PAD; // name line + action-button line
     private static final int MAX_VISIBLE_ROWS = 5;       // two-line rows: 5 keeps the window inside 240px screens
     private static final int MAX_NAME_LEN = 24;
-    private static final int STATUS_H = 11;              // always-reserved result line at the foot
+    private static final int STATUS_H = 12;              // always-reserved result line: the tallest bake is 12px
     private static final long STATUS_HOLD_MS = 2500L;
 
     private final ClickGuiScreen screen;
@@ -40,6 +41,7 @@ public class ConfigWindow {
     private final int screenHeight;
 
     private final int width;
+    private final int createW;
     private int x;
     private int y;
     private List<String> names;
@@ -58,6 +60,7 @@ public class ConfigWindow {
         this.screenWidth = screenWidth;
         this.screenHeight = screenHeight;
         this.width = computeWidth();
+        this.createW = computeCreateW();
         refresh();
         // Center once only; refresh() must not move the window or rows shift under the cursor.
         x = (screenWidth - width) / 2;
@@ -77,6 +80,12 @@ public class ConfigWindow {
         return windowWidth(btnW(font, "Update"), btnW(font, "Rename"), deleteBtnW(font));
     }
 
+    /** Create has the same per-scale bake problem as the action row: a fixed width never fit its label. */
+    private static int computeCreateW() {
+        CustomFont font = Fonts.medium;
+        return font == null ? CREATE_FALLBACK_W : btnW(font, "Create");
+    }
+
     /** Font-free so a check can pin the action-row fit at each scale's measured button widths. */
     static int windowWidth(int updateW, int renameW, int deleteW) {
         return Math.max(MIN_WIDTH, PAD * 2 + updateW + BTN_GAP + renameW + BTN_GAP + deleteW);
@@ -85,7 +94,8 @@ public class ConfigWindow {
     private int height() {
         int rows = Math.min(names.size(), MAX_VISIBLE_ROWS);
         // Reserve status space so feedback cannot recenter rows beneath the cursor.
-        return HEADER + NAME_ROW_H + rows * PROFILE_ROW_H + STATUS_H + PAD;
+        // An empty list still reserves one line, so the window is never a bare header strip.
+        return HEADER + NAME_ROW_H + (rows == 0 ? ROW_H : rows * PROFILE_ROW_H) + STATUS_H + PAD;
     }
 
     private int fieldX() {
@@ -97,11 +107,11 @@ public class ConfigWindow {
     }
 
     private int createX() {
-        return x + width - PAD - CREATE_W;
+        return x + width - PAD - createW;
     }
 
     private int fieldWidth() {
-        return createX() - BTN_GAP - fieldX();
+        return createX() - FIELD_GAP - fieldX();
     }
 
     private int rowsTop() {
@@ -121,12 +131,18 @@ public class ConfigWindow {
         return x + PAD;
     }
 
+    /** Spread the three buttons over the inner width, so a window wider than them has no dead right edge. */
+    private int actionGap(CustomFont font) {
+        int slack = width - PAD * 2 - btnW(font, "Update") - btnW(font, "Rename") - deleteBtnW(font);
+        return Math.max(BTN_GAP, slack / 2); // floor-divided, so the row can only end short, never past PAD
+    }
+
     private int renameX(CustomFont font) {
-        return updateX() + btnW(font, "Update") + BTN_GAP;
+        return updateX() + btnW(font, "Update") + actionGap(font);
     }
 
     private int deleteX(CustomFont font) {
-        return renameX(font) + btnW(font, "Rename") + BTN_GAP;
+        return renameX(font) + btnW(font, "Rename") + actionGap(font);
     }
 
     private static int btnLineY(int rowY) {
@@ -159,6 +175,10 @@ public class ConfigWindow {
                 RenderUtil.rectBounds(x, rowY, x + width, rowY + 1, Theme.SEP);
             }
         }
+        if (names.isEmpty()) {
+            // Otherwise a fresh install shows an unexplained empty band under the name field.
+            font.drawString("No profiles yet", x + PAD, top + (ROW_H - font.getHeight()) / 2f, Theme.TEXT_MUTE);
+        }
         renderScrollIndicator(visible);
 
         renderStatus(font, h);
@@ -173,7 +193,7 @@ public class ConfigWindow {
         CustomSearchField.draw(font, fx, fy, fw, FIELD_H, nameInput, fieldFocused,
                 "config name", cursorCounter);
 
-        StyledButton.draw(font, "Create", createX(), fy, CREATE_W, FIELD_H,
+        StyledButton.draw(font, "Create", createX(), fy, createW, FIELD_H,
                 mouseX, mouseY, true, Theme.WELL, Theme.TEXT);
     }
 
@@ -247,7 +267,7 @@ public class ConfigWindow {
             return true;
         }
         fieldFocused = false;
-        if (RenderUtil.hovered(mouseX, mouseY, createX(), fieldY(), CREATE_W, FIELD_H)) {
+        if (RenderUtil.hovered(mouseX, mouseY, createX(), fieldY(), createW, FIELD_H)) {
             create();
             return true;
         }
