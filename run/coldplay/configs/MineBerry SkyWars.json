@@ -29,14 +29,14 @@
         "Invisible": true,
         "NPCs": false,
         "Target": "Distance",
-        "Lock": "Switch",
+        "Lock": "Single",
         "Rotation Speed": [
-          12.0,
-          20.0
+          20.5,
+          30.0
         ],
         "Pitch Speed": [
-          5.5,
-          12.0
+          9.0,
+          16.0
         ],
         "Yaw Acceleration": [
           30.0,
@@ -47,8 +47,8 @@
           45.0
         ],
         "Yaw Deceleration": [
-          10.0,
-          20.0
+          2.0,
+          8.0
         ],
         "Pitch Deceleration": [
           10.0,
@@ -57,11 +57,11 @@
         "Rotation Range": 5.0,
         "FOV": 110.0,
         "CPS": [
-          7.0,
-          10.0
+          6.0,
+          12.0
         ],
         "Range": 3.0,
-        "Raytrace": "First",
+        "Raytrace": "Linear",
         "Render": false,
         "Auto Off": true
       }
@@ -92,7 +92,7 @@
       }
     },
     "WTap": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 0,
       "settings": {
         "Chance": 75.0,
