@@ -18,20 +18,19 @@ import java.util.List;
 
 /** Profile management window. ClickGuiScreen owns dismissal and input priority. */
 public class ConfigWindow {
-    private static final int MIN_WIDTH = 200;           // floor: leaves the name field real room beside Create
+    private static final int WIDTH = 200;
     private static final int HEADER = ClickGuiScreen.HEADER_HEIGHT;
-    private static final int ROW_H = ClickGuiScreen.ROW_HEIGHT;
     private static final int NAME_ROW_H = 28;           // name field + create button row
     private static final int FIELD_H = 16;              // text field / create button height
-    private static final int BTN_H = ROW_H - 4;          // per-row Upd/Ren/Del button height
     private static final int PAD = 6;                   // outer left/right/bottom padding
-    private static final int BTN_GAP = 2;                // floor for the gap between adjacent action buttons
     private static final int FIELD_GAP = 6;              // gap between the name field and Create
     private static final int CREATE_FALLBACK_W = 50;     // scale-1 width, used only if the font is absent
-    private static final int BTN_TEXT_PAD = 4;           // horizontal text padding inside an action button
-    private static final int BTN_BOT_PAD = 5;            // gap below the button line inside a row
-    private static final int PROFILE_ROW_H = ROW_H + BTN_H + BTN_BOT_PAD; // name line + action-button line
-    private static final int MAX_VISIBLE_ROWS = 5;       // two-line rows: 5 keeps the window inside 240px screens
+    private static final int MIN_FIELD_W = 110;          // the name field must stay usable as Create rebakes
+    private static final int ICON_W = 16;                // action button: 12px glyph box plus 2px each side
+    private static final int ICON_H = 12;
+    private static final int ICON_GAP = 3;
+    private static final int PROFILE_ROW_H = 22;         // one line: name plus the three action glyphs
+    private static final int MAX_VISIBLE_ROWS = 7;       // 7 single-line rows still land inside 240px screens
     private static final int MAX_NAME_LEN = 24;
     private static final int STATUS_H = 12;              // always-reserved result line: the tallest bake is 12px
     private static final long STATUS_HOLD_MS = 2500L;
@@ -40,7 +39,6 @@ public class ConfigWindow {
     private final int screenWidth;
     private final int screenHeight;
 
-    private final int width;
     private final int createW;
     private int x;
     private int y;
@@ -50,7 +48,7 @@ public class ConfigWindow {
     private String nameInput = "";
     private boolean fieldFocused;
     private int cursorCounter; // frame counter for the blinking caret
-    private String pendingDelete; // profile armed for delete-confirm ("Confirm?" state), or null
+    private String pendingDelete; // profile armed for delete-confirm (red button), or null
     private String status = "";
     private int statusColor;
     private long statusExpiresAt; // wall-clock milliseconds
@@ -59,43 +57,33 @@ public class ConfigWindow {
         this.screen = screen;
         this.screenWidth = screenWidth;
         this.screenHeight = screenHeight;
-        this.width = computeWidth();
         this.createW = computeCreateW();
         refresh();
         // Center once only; refresh() must not move the window or rows shift under the cursor.
-        x = (screenWidth - width) / 2;
+        x = (screenWidth - WIDTH) / 2;
         y = (screenHeight - height()) / 2;
         clampToScreen();
     }
 
     /**
-     * Font metrics are baked per GUI scale, so a fixed width only fits the action row at scale 1.
-     * measured once — a scale change resizes the screen, and initGui() drops this window.
+     * Create is the one control sized from text, and the font is re-baked per GUI scale.
+     * Measured once — a scale change resizes the screen, and initGui() drops this window.
      */
-    private static int computeWidth() {
-        CustomFont font = Fonts.medium;
-        if (font == null) {
-            return MIN_WIDTH; // atlases not baked yet; nothing is rendered or clickable either
-        }
-        return windowWidth(btnW(font, "Update"), btnW(font, "Rename"), deleteBtnW(font));
-    }
-
-    /** Create has the same per-scale bake problem as the action row: a fixed width never fit its label. */
     private static int computeCreateW() {
         CustomFont font = Fonts.medium;
-        return font == null ? CREATE_FALLBACK_W : btnW(font, "Create");
+        return font == null ? CREATE_FALLBACK_W : font.getStringWidth("Create") + 8;
     }
 
-    /** Font-free so a check can pin the action-row fit at each scale's measured button widths. */
-    static int windowWidth(int updateW, int renameW, int deleteW) {
-        return Math.max(MIN_WIDTH, PAD * 2 + updateW + BTN_GAP + renameW + BTN_GAP + deleteW);
+    /** Font-free so a check can pin the field against the widest Create bake. */
+    static int fieldWidthFor(int createW) {
+        return WIDTH - PAD * 2 - FIELD_GAP - createW;
     }
 
     private int height() {
-        int rows = Math.min(names.size(), MAX_VISIBLE_ROWS);
+        // An empty list still reserves one row, so the window is never a bare header strip.
+        int rows = Math.max(1, Math.min(names.size(), MAX_VISIBLE_ROWS));
         // Reserve status space so feedback cannot recenter rows beneath the cursor.
-        // An empty list still reserves one line, so the window is never a bare header strip.
-        return HEADER + NAME_ROW_H + (rows == 0 ? ROW_H : rows * PROFILE_ROW_H) + STATUS_H + PAD;
+        return HEADER + NAME_ROW_H + rows * PROFILE_ROW_H + STATUS_H + PAD;
     }
 
     private int fieldX() {
@@ -107,50 +95,37 @@ public class ConfigWindow {
     }
 
     private int createX() {
-        return x + width - PAD - createW;
+        return x + WIDTH - PAD - createW;
     }
 
     private int fieldWidth() {
-        return createX() - FIELD_GAP - fieldX();
+        return fieldWidthFor(createW);
     }
 
     private int rowsTop() {
         return y + HEADER + NAME_ROW_H;
     }
 
-    private static int btnW(CustomFont font, String label) {
-        return font.getStringWidth(label) + BTN_TEXT_PAD * 2;
+    // Action glyphs are anchored to the right edge, so a wider Create can only eat into the
+    // name field — never push a control past the frame the way the old label row could.
+    private int deleteIconX() {
+        return x + WIDTH - PAD - ICON_W;
     }
 
-    /** Delete keeps one width in both states so the button never resizes under the cursor mid-confirm. */
-    private static int deleteBtnW(CustomFont font) {
-        return Math.max(btnW(font, "Delete"), btnW(font, "Confirm?"));
+    private int renameIconX() {
+        return deleteIconX() - ICON_GAP - ICON_W;
     }
 
-    private int updateX() {
-        return x + PAD;
+    private int updateIconX() {
+        return renameIconX() - ICON_GAP - ICON_W;
     }
 
-    /** Spread the three buttons over the inner width, so a window wider than them has no dead right edge. */
-    private int actionGap(CustomFont font) {
-        int slack = width - PAD * 2 - btnW(font, "Update") - btnW(font, "Rename") - deleteBtnW(font);
-        return Math.max(BTN_GAP, slack / 2); // floor-divided, so the row can only end short, never past PAD
-    }
-
-    private int renameX(CustomFont font) {
-        return updateX() + btnW(font, "Update") + actionGap(font);
-    }
-
-    private int deleteX(CustomFont font) {
-        return renameX(font) + btnW(font, "Rename") + actionGap(font);
-    }
-
-    private static int btnLineY(int rowY) {
-        return rowY + ROW_H;
+    private static int iconY(int rowY) {
+        return rowY + (PROFILE_ROW_H - ICON_H) / 2;
     }
 
     public boolean contains(int mouseX, int mouseY) {
-        return RenderUtil.hovered(mouseX, mouseY, x, y, width, height());
+        return RenderUtil.hovered(mouseX, mouseY, x, y, WIDTH, height());
     }
 
     public void render(int mouseX, int mouseY) {
@@ -161,8 +136,8 @@ public class ConfigWindow {
         cursorCounter++;
         int h = height();
 
-        ClickGuiScreen.drawWindowBase(x, y, width, h);
-        ClickGuiScreen.drawWindowHeader(font, "Config", x, y, width, mouseX, mouseY);
+        ClickGuiScreen.drawWindowBase(x, y, WIDTH, h);
+        ClickGuiScreen.drawWindowHeader(font, "Config", x, y, WIDTH, mouseX, mouseY);
 
         renderNameRow(font, mouseX, mouseY);
 
@@ -172,25 +147,24 @@ public class ConfigWindow {
             int rowY = top + i * PROFILE_ROW_H;
             renderRow(font, names.get(scrollOffset + i), rowY, mouseX, mouseY);
             if (i > 0) {
-                RenderUtil.rectBounds(x, rowY, x + width, rowY + 1, Theme.SEP);
+                RenderUtil.rectBounds(x, rowY, x + WIDTH, rowY + 1, Theme.SEP);
             }
         }
         if (names.isEmpty()) {
             // Otherwise a fresh install shows an unexplained empty band under the name field.
-            font.drawString("No profiles yet", x + PAD, top + (ROW_H - font.getHeight()) / 2f, Theme.TEXT_MUTE);
+            float ty = top + (PROFILE_ROW_H - font.getHeight()) / 2f;
+            font.drawString("No profiles yet", x + PAD, ty, Theme.TEXT_MUTE);
         }
         renderScrollIndicator(visible);
 
         renderStatus(font, h);
 
-        ClickGuiScreen.drawWindowFrame(x, y, width, h);
+        ClickGuiScreen.drawWindowFrame(x, y, WIDTH, h);
     }
 
     private void renderNameRow(CustomFont font, int mouseX, int mouseY) {
-        int fx = fieldX();
         int fy = fieldY();
-        int fw = fieldWidth();
-        CustomSearchField.draw(font, fx, fy, fw, FIELD_H, nameInput, fieldFocused,
+        CustomSearchField.draw(font, fieldX(), fy, fieldWidth(), FIELD_H, nameInput, fieldFocused,
                 "config name", cursorCounter);
 
         StyledButton.draw(font, "Create", createX(), fy, createW, FIELD_H,
@@ -203,7 +177,7 @@ public class ConfigWindow {
         if (maxOffset <= 0) {
             return;
         }
-        int trackX = x + width - 2; // clears the action row, which ends PAD inside the frame
+        int trackX = x + WIDTH - 2; // clears the glyphs, which end PAD inside the frame
         int trackY = rowsTop();
         int trackH = visible * PROFILE_ROW_H;
         // Rows are uniform, so row counts carry the same ratios the helpers need.
@@ -218,33 +192,59 @@ public class ConfigWindow {
             return;
         }
         float ty = y + h - PAD - STATUS_H + (STATUS_H - font.getHeight()) / 2f;
-        font.drawString(font.trimToWidth(status, width - PAD * 2, "..."), x + PAD, ty, statusColor);
+        font.drawString(font.trimToWidth(status, WIDTH - PAD * 2, "..."), x + PAD, ty, statusColor);
     }
 
     private void renderRow(CustomFont font, String name, int rowY, int mouseX, int mouseY) {
-        // Lift only the name line: it loads the profile, while the buttons below hover for themselves.
-        if (RenderUtil.hovered(mouseX, mouseY, x, rowY, width, ROW_H)) {
-            RenderUtil.rect(x, rowY, width, ROW_H, Theme.HOVER_LIFT);
+        int nameW = updateIconX() - ICON_GAP - (x + PAD);
+        // Lift only the name span: it loads the profile, while the glyphs hover for themselves.
+        if (RenderUtil.hovered(mouseX, mouseY, x, rowY, nameW + PAD, PROFILE_ROW_H)) {
+            RenderUtil.rect(x, rowY, nameW + PAD, PROFILE_ROW_H, Theme.HOVER_LIFT);
         }
+        float textY = rowY + (PROFILE_ROW_H - font.getHeight()) / 2f;
+        font.drawString(font.trimToWidth(name, nameW, "..."), x + PAD, textY, Theme.TEXT);
 
-        String label = font.trimToWidth(name, width - PAD * 2, "...");
-        float textY = rowY + (ROW_H - font.getHeight()) / 2f;
-        font.drawString(label, x + PAD, textY, Theme.TEXT);
-
-        int by = btnLineY(rowY);
+        int iy = iconY(rowY);
         boolean armed = name.equals(pendingDelete);
-        drawActionButton(font, "Update", updateX(), by, btnW(font, "Update"),
-                Theme.TEXT_DIM, Theme.WELL, mouseX, mouseY);
-        drawActionButton(font, "Rename", renameX(font), by, btnW(font, "Rename"),
-                Theme.TEXT_DIM, Theme.WELL, mouseX, mouseY);
-        drawActionButton(font, armed ? "Confirm?" : "Delete", deleteX(font), by, deleteBtnW(font),
-                armed ? Theme.TEXT : Theme.DANGER,
-                armed ? Theme.DANGER : Theme.WELL, mouseX, mouseY);
+        drawIconButton(updateIconX(), iy, Theme.WELL, mouseX, mouseY);
+        glyphUpdate(updateIconX() + 2, iy, Theme.TEXT_DIM, Theme.WELL);
+        drawIconButton(renameIconX(), iy, Theme.WELL, mouseX, mouseY);
+        glyphRename(renameIconX() + 2, iy, Theme.TEXT_DIM);
+        // Armed delete floods the button instead of swapping a label; there is no label to swap.
+        drawIconButton(deleteIconX(), iy, armed ? Theme.DANGER : Theme.WELL, mouseX, mouseY);
+        glyphDelete(deleteIconX() + 2, iy, armed ? Theme.TEXT : Theme.DANGER,
+                armed ? Theme.DANGER : Theme.WELL);
     }
 
-    private void drawActionButton(CustomFont font, String label, int bx, int by, int bw,
-                                  int textColor, int bg, int mouseX, int mouseY) {
-        StyledButton.draw(font, label, bx, by, bw, BTN_H, mouseX, mouseY, true, bg, textColor);
+    /** StyledButton's chrome without a label: fill, then the same idle/hover outline. */
+    private static void drawIconButton(int bx, int by, int bg, int mouseX, int mouseY) {
+        RenderUtil.rect(bx, by, ICON_W, ICON_H, bg);
+        RenderUtil.outline(bx, by, bx + ICON_W, by + ICON_H, 1,
+                RenderUtil.hovered(mouseX, mouseY, bx, by, ICON_W, ICON_H) ? Theme.CONTOUR : Theme.SEP);
+    }
+
+    // 12x12 glyphs drawn as solid runs, so they stay on the pixel grid the bundled font uses.
+    // Cutouts are painted in the button's own background rather than punched out.
+    private static void glyphUpdate(int gx, int gy, int fg, int bg) {
+        RenderUtil.rect(gx + 1, gy + 1, 10, 10, fg); // floppy body
+        RenderUtil.rect(gx + 3, gy + 2, 6, 3, bg);   // shutter
+        RenderUtil.rect(gx + 3, gy + 7, 6, 4, bg);   // label
+    }
+
+    private static void glyphRename(int gx, int gy, int fg) {
+        RenderUtil.rect(gx + 7, gy + 1, 4, 2, fg);   // pencil, stepped down the diagonal
+        RenderUtil.rect(gx + 5, gy + 3, 4, 2, fg);
+        RenderUtil.rect(gx + 3, gy + 5, 4, 2, fg);
+        RenderUtil.rect(gx + 1, gy + 7, 4, 2, fg);
+        RenderUtil.rect(gx + 1, gy + 9, 2, 2, fg);   // tip
+    }
+
+    private static void glyphDelete(int gx, int gy, int fg, int bg) {
+        RenderUtil.rect(gx + 4, gy, 4, 1, fg);       // handle
+        RenderUtil.rect(gx + 2, gy + 1, 8, 2, fg);   // lid
+        RenderUtil.rect(gx + 2, gy + 3, 8, 9, fg);   // body
+        RenderUtil.rect(gx + 4, gy + 5, 1, 5, bg);   // slots
+        RenderUtil.rect(gx + 7, gy + 5, 1, 5, bg);
     }
 
     /** Consumes every click within the window, including inactive areas. */
@@ -255,9 +255,12 @@ public class ConfigWindow {
         if (button != 0) {
             return true;
         }
+        if (Fonts.medium == null) {
+            return true; // nothing was rendered, so nothing is clickable
+        }
         String armed = pendingDelete;
         pendingDelete = null; // Only a second Delete click on the same row confirms.
-        if (ClickGuiScreen.hitsClose(x, y, width, HEADER, mouseX, mouseY)) {
+        if (ClickGuiScreen.hitsClose(x, y, WIDTH, HEADER, mouseX, mouseY)) {
             screen.closeConfigWindow();
             return true;
         }
@@ -271,35 +274,29 @@ public class ConfigWindow {
             create();
             return true;
         }
-        CustomFont font = Fonts.medium;
-        if (font == null) {
-            return true; // nothing was rendered, so nothing is clickable
-        }
         int visible = Math.min(names.size(), MAX_VISIBLE_ROWS);
         int top = rowsTop();
         for (int i = 0; i < visible; i++) {
             int rowY = top + i * PROFILE_ROW_H;
-            if (!RenderUtil.hovered(mouseX, mouseY, x, rowY, width, PROFILE_ROW_H)) {
+            if (!RenderUtil.hovered(mouseX, mouseY, x, rowY, WIDTH, PROFILE_ROW_H)) {
                 continue;
             }
             String name = names.get(scrollOffset + i);
-            if (mouseY < btnLineY(rowY)) {
-                load(name);
-                return true;
-            }
-            int by = btnLineY(rowY);
-            if (RenderUtil.hovered(mouseX, mouseY, updateX(), by, btnW(font, "Update"), BTN_H)) {
+            int iy = iconY(rowY);
+            if (RenderUtil.hovered(mouseX, mouseY, updateIconX(), iy, ICON_W, ICON_H)) {
                 update(name);
-            } else if (RenderUtil.hovered(mouseX, mouseY, renameX(font), by, btnW(font, "Rename"), BTN_H)) {
+            } else if (RenderUtil.hovered(mouseX, mouseY, renameIconX(), iy, ICON_W, ICON_H)) {
                 rename(name);
-            } else if (RenderUtil.hovered(mouseX, mouseY, deleteX(font), by, deleteBtnW(font), BTN_H)) {
+            } else if (RenderUtil.hovered(mouseX, mouseY, deleteIconX(), iy, ICON_W, ICON_H)) {
                 if (name.equals(armed)) {
                     delete(name);
                 } else {
                     pendingDelete = name;
                 }
+            } else if (mouseX < updateIconX() - ICON_GAP) {
+                load(name);
             }
-            // empty space on the button line is inert: a mis-click near Delete must not load a profile
+            // the gaps between glyphs stay inert: a mis-click near Delete must not load a profile
             return true;
         }
         return true;
@@ -324,7 +321,7 @@ public class ConfigWindow {
         if (dWheel == 0 || !contains(mouseX, mouseY)) {
             return;
         }
-        pendingDelete = null; // an armed Confirm? must not scroll under the cursor onto another row
+        pendingDelete = null; // an armed delete must not scroll under the cursor onto another row
         int maxOffset = Math.max(0, names.size() - MAX_VISIBLE_ROWS);
         if (maxOffset == 0) {
             return;
@@ -417,7 +414,7 @@ public class ConfigWindow {
 
     /** Keeps a height change on-screen without re-centering, which would shift rows under the cursor. */
     private void clampToScreen() {
-        x = MathHelper.clamp_int(x, 0, Math.max(0, screenWidth - width));
+        x = MathHelper.clamp_int(x, 0, Math.max(0, screenWidth - WIDTH));
         y = MathHelper.clamp_int(y, 0, Math.max(0, screenHeight - height()));
     }
 
