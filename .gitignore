@@ -1,0 +1,62 @@
+# Build output
+/build/
+/out/
+
+# Keep runtime data local, except shared profiles. Git requires each parent to be re-included.
+/run/*
+!/run/coldplay/
+/run/coldplay/*
+!/run/coldplay/configs/
+
+# Account, proxy and session data, in case it is ever written outside /run/
+alts.json
+alts.txt
+proxy.json
+proxies.txt
+usercache.json
+servers.dat
+*.token
+*.pem
+
+# Logs and crash dumps
+/logs/
+*.log
+crash-reports/
+hs_err_pid*.log
+
+# Local notes and documentation are not distributed.
+*.[mM][dD]
+*.markdown
+!/README.md
+
+
+# External packs and private runtime data, wherever they are stored.
+resourcepacks/
+server-resource-packs/
+shaderpacks/
+alts.*
+proxies.*
+proxy.*
+accounts.json
+accounts.txt
+launcher_accounts.json
+launcher_profiles.json
+*.key
+*.p12
+*.pfx
+*.jks
+
+# IntelliJ
+*.iml
+
+# OS noise
+Thumbs.db
+desktop.ini
+
+# Tests stay local.
+/test/
+
+# Editor and tool state: every dot file or dot directory stays local.
+.*
+!/.gitignore
+!/.gitattributes
