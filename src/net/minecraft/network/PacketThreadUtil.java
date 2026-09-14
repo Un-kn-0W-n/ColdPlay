@@ -18,6 +18,9 @@ public class PacketThreadUtil
             {
                 public void run()
                 {
+                    // ColdPlay >>> Velocity Hypixel hold
+                    if (coldplay.module.movement.Velocity.hold(p_180031_0_, p_180031_1_, this)) return;
+                    // ColdPlay <<<
                     PacketThreadUtil.clientPreProcessPacket(p_180031_0_);
                     p_180031_0_.processPacket(p_180031_1_);
                 }
