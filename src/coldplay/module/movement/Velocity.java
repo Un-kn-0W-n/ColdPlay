@@ -24,6 +24,11 @@ public class Velocity extends Module {
     }
 
     @Override
+    public String getSuffix() {
+        return Math.round(chance.get()) + "%";
+    }
+
+    @Override
     protected void onDisable() {
         pendingHit = false;
     }

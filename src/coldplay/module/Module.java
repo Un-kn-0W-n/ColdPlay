@@ -1,6 +1,7 @@
 package coldplay.module;
 
 import coldplay.setting.BooleanSetting;
+import coldplay.setting.ModeSetting;
 import coldplay.setting.Setting;
 import org.lwjglx.input.Keyboard;
 
@@ -50,6 +51,16 @@ public abstract class Module {
 
     public List<Setting<?>> getSettings() {
         return settingsView;
+    }
+
+    /** Gray text after the name in the HUD array list; null for none. */
+    public String getSuffix() {
+        for (Setting<?> setting : settings) {
+            if (setting instanceof ModeSetting) {
+                return ((ModeSetting) setting).get();
+            }
+        }
+        return null;
     }
 
     public String getName() {

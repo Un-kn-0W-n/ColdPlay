@@ -386,8 +386,8 @@ public abstract class GuiScreen extends Gui implements GuiYesNoCallback {
      * Delegates mouse and keyboard input.
      */
     public void handleInput() throws IOException {
-        if (Mouse.isCreated()) while (Mouse.next()) this.handleMouseInput();
-        if (Keyboard.isCreated()) while (Keyboard.next()) this.handleKeyboardInput();
+        if (Mouse.isCreated()) while (!coldplay.module.movement.InvMove.isInputPaused(this) && Mouse.next()) this.handleMouseInput();
+        if (Keyboard.isCreated()) while (!coldplay.module.movement.InvMove.isInputPaused(this) && Keyboard.next()) this.handleKeyboardInput();
     }
 
     /**

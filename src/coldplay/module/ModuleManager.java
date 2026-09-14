@@ -5,7 +5,6 @@ import coldplay.event.EventPriority;
 import coldplay.event.EventTarget;
 import coldplay.event.EventUpdate;
 import coldplay.hud.HudState;
-import coldplay.setting.ModeSetting;
 import coldplay.broker.GameStateTracker;
 
 import java.util.ArrayList;
@@ -239,14 +238,7 @@ public class ModuleManager {
     public List<ModuleView> getModuleViews() {
         List<ModuleView> views = new ArrayList<>();
         for (Module module : modules) {
-            String suffix = null;
-            for (coldplay.setting.Setting<?> setting : module.getSettings()) {
-                if (setting instanceof ModeSetting) {
-                    suffix = ((ModeSetting) setting).get();
-                    break;
-                }
-            }
-            views.add(new ModuleView(module.getName(), module.isEnabled(), suffix));
+            views.add(new ModuleView(module.getName(), module.isEnabled(), module.getSuffix()));
         }
         return Collections.unmodifiableList(views);
     }
