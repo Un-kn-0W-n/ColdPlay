@@ -8,6 +8,7 @@ import coldplay.module.Category;
 import coldplay.module.Module;
 import coldplay.module.ModuleView;
 import coldplay.setting.BooleanSetting;
+import coldplay.setting.NumberSetting;
 import coldplay.util.Animation;
 import coldplay.util.RenderUtil;
 import coldplay.util.font.CustomFont;
@@ -43,7 +44,9 @@ public class HudModule extends Module {
     private final BooleanSetting arrayList = add(new BooleanSetting("ArrayList", true).describe("Show the list of enabled modules."));
     private final BooleanSetting suffixes = add(new BooleanSetting("Suffixes", true)
             .describe("Show a module's active mode next to its name."));
+    private final NumberSetting listScale = add(HudState.scaleSetting("ArrayList Scale"));
     private final BooleanSetting watermark = add(new BooleanSetting("Watermark", true).describe("Show the ColdPlay watermark."));
+    private final NumberSetting watermarkScale = add(HudState.scaleSetting("Watermark Scale"));
     private final BooleanSetting animations = add(new BooleanSetting("Animations", true).describe("Wipe and fade HUD entries in and out."));
 
     private final Supplier<List<ModuleView>> modules;
@@ -60,6 +63,10 @@ public class HudModule extends Module {
         this.clientName = clientName;
         this.clientVersion = clientVersion;
         suffixes.visibleWhen(arrayList::get).indent(1);
+        listScale.visibleWhen(arrayList::get).indent(1);
+        watermarkScale.visibleWhen(watermark::get).indent(1);
+        hud.registerScale("ArrayList", listScale);
+        hud.registerScale("Watermark", watermarkScale);
     }
 
     @EventTarget
@@ -83,7 +90,9 @@ public class HudModule extends Module {
         int scaleFactor = resolution.getScaleFactor();
 
         // The list anchor is the corner its rows pin to; which screen half it sits in picks the alignment.
-        int wmHeight = titleFont.getHeight() + PAD_Y * 2;
+        float wmScale = watermarkScale.get().floatValue();
+        float scale = listScale.get().floatValue();
+        int wmHeight = Math.round((titleFont.getHeight() + PAD_Y * 2) * wmScale);
         HudState.Position wmState = hud.getOrCreate("Watermark", MARGIN, MARGIN,
                 screenWidth, screenHeight);
         HudState.Position listState = hud.getOrCreate(
@@ -120,15 +129,17 @@ public class HudModule extends Module {
         double rowsTop = top ? listState.y : listState.y - listHeight;
 
         resolveGeometry(lines, rowsTop, listState.x, right);
+        RenderUtil.pushScale(listState.x, listState.y, scale);
         for (Line l : lines) {
             RenderUtil.rectBounds(l.left, l.top, l.right, l.bottom, Theme.applyAlpha(COLOR_BOX, (float) l.progress));
         }
         drawContour(lines, listState.x, right);
         for (Line l : lines) {
-            drawText(l, listState.x, right, scaleFactor);
+            drawText(l, listState.x, listState.y, right, scaleFactor, scale);
         }
+        GlStateManager.popMatrix();
         if (showWatermark) {
-            drawWatermark(titleFont, listFont, wmState.x, wmState.y);
+            drawWatermark(titleFont, listFont, wmState.x, wmState.y, wmScale);
         }
         if (!lines.isEmpty() && hud.isEditing()) {
             int minLeft = Integer.MAX_VALUE;
@@ -138,7 +149,7 @@ public class HudModule extends Module {
                 maxRight = Math.max(maxRight, l.right);
             }
             hud.report("ArrayList", minLeft, lines.get(0).top,
-                    maxRight, lines.get(lines.size() - 1).bottom);
+                    maxRight, lines.get(lines.size() - 1).bottom, listState.x, listState.y, scale);
         }
 
         GlStateManager.color(1f, 1f, 1f, 1f);
@@ -246,7 +257,7 @@ public class HudModule extends Module {
     }
 
     /** Text is pinned at its fully-shown position and scissored to the box while the box wipes in. */
-    private static void drawText(Line l, int anchorX, boolean right, int scaleFactor) {
+    private static void drawText(Line l, int anchorX, int anchorY, boolean right, int scaleFactor, float scale) {
         if (l.right <= l.left || l.bottom <= l.top) {
             return;
         }
@@ -255,7 +266,9 @@ public class HudModule extends Module {
         int textY = l.top + PAD_Y;
         boolean clip = p < 0.999F; // fully shown rows need no scissor
         if (clip) {
-            RenderUtil.beginScissor(l.left, l.top, l.right - l.left, l.bottom - l.top, scaleFactor);
+            // scissor ignores the matrix, so scale the rect around the anchor by hand
+            RenderUtil.beginScissor(anchorX + (l.left - anchorX) * scale, anchorY + (l.top - anchorY) * scale,
+                    (l.right - l.left) * scale, (l.bottom - l.top) * scale, scaleFactor);
         }
         l.font.drawStringWithShadow(l.name, textX, textY, Theme.applyAlpha(COLOR_TEXT, p));
         if (l.suffix != null) {
@@ -266,19 +279,21 @@ public class HudModule extends Module {
         }
     }
 
-    private void drawWatermark(CustomFont titleFont, CustomFont listFont, int left, int top) {
+    private void drawWatermark(CustomFont titleFont, CustomFont listFont, int left, int top, float scale) {
         String name = clientName;
         String version = " v" + clientVersion;
         int nameWidth = titleFont.getStringWidth(name);
         int chipWidth = nameWidth + listFont.getStringWidth(version) + PAD_X * 2;
         int chipHeight = titleFont.getHeight() + PAD_Y * 2;
 
+        RenderUtil.pushScale(left, top, scale);
         RenderUtil.drawBorderedRect(left, top, left + chipWidth, top + chipHeight, COLOR_BOX, COLOR_BORDER);
         titleFont.drawStringWithShadow(name, left + PAD_X, top + PAD_Y, COLOR_TEXT);
         listFont.drawStringWithShadow(version, left + PAD_X + nameWidth,
                 top + PAD_Y + (titleFont.getAscent() - listFont.getAscent()), COLOR_SUFFIX);
+        GlStateManager.popMatrix();
         if (hud.isEditing()) {
-            hud.report("Watermark", left, top, left + chipWidth, top + chipHeight);
+            hud.report("Watermark", left, top, left + chipWidth, top + chipHeight, left, top, scale);
         }
     }
 

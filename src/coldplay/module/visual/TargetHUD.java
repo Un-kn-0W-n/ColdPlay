@@ -65,7 +65,7 @@ public class TargetHUD extends Module {
     private final BooleanSetting animals = add(new BooleanSetting("Animals", false).describe("Show when looking at passive animals."));
 
     private final HeaderSetting placementHeader = add(new HeaderSetting("Placement"));
-    private final NumberSetting scale = add(new NumberSetting("Scale", 1.0, 0.5, 2.0, 0.1).describe("Panel size multiplier."));
+    private final NumberSetting scale = add(HudState.scaleSetting("Scale"));
     private final NumberSetting holdTime = add(new NumberSetting("Hold Time", 1.5, 0.0, 5.0, 0.25).describe("Seconds to keep the panel after the target is lost."));
 
     private EntityLivingBase display;
@@ -77,6 +77,7 @@ public class TargetHUD extends Module {
         super("TargetHUD", Category.VISUAL,
                 "Panel under the crosshair showing your combat target: model, real health, armor.");
         this.hud = hud;
+        hud.registerScale("TargetHUD", scale);
     }
 
     @Override
@@ -198,15 +199,9 @@ public class TargetHUD extends Module {
 
         float s = scale.get().floatValue();
         if (hud.isEditing()) {
-            // report in screen coords, scaled around the pin
-            hud.report("TargetHUD",
-                    Math.round(anchorX + (left - anchorX) * s), top,
-                    Math.round(anchorX + (right - anchorX) * s), Math.round(top + panelH * s));
+            hud.report("TargetHUD", left, top, right, bottom, anchorX, top, s);
         }
-        GlStateManager.pushMatrix();
-        GlStateManager.translate(anchorX, top, 0.0F);
-        GlStateManager.scale(s, s, 1.0F);
-        GlStateManager.translate(-anchorX, -top, 0.0F);
+        RenderUtil.pushScale(anchorX, top, s);
 
         RenderUtil.drawBorderedRect(left, top, right, bottom, COLOR_BOX, COLOR_BORDER);
 

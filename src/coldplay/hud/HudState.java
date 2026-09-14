@@ -1,5 +1,7 @@
 package coldplay.hud;
 
+import coldplay.setting.NumberSetting;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -18,6 +20,7 @@ public final class HudState {
 
     private final Map<String, Position> positions = new LinkedHashMap<String, Position>();
     private final Map<String, int[]> boxes = new LinkedHashMap<String, int[]>();
+    private final Map<String, NumberSetting> scales = new LinkedHashMap<String, NumberSetting>();
     private boolean editing;
     private int layoutWidth; // 0 until the first render or config load
     private int layoutHeight;
@@ -87,6 +90,21 @@ public final class HudState {
         positions.put(name, new Position(x, y));
     }
 
+    public static NumberSetting scaleSetting(String name) {
+        return new NumberSetting(name, 1.0, 0.5, 2.0, 0.05)
+                .describe("Size multiplier. Drag any corner in Edit GUI.");
+    }
+
+    /** Lets the editor resize the element by dragging its corners. */
+    public void registerScale(String name, NumberSetting scale) {
+        scales.put(name, scale);
+    }
+
+    /** Null when the element has no scale to drag. */
+    public NumberSetting getScale(String name) {
+        return scales.get(name);
+    }
+
     public int getLayoutWidth() {
         return layoutWidth;
     }
@@ -122,6 +140,17 @@ public final class HudState {
         if (editing) {
             boxes.put(name, new int[]{left, top, right, bottom});
         }
+    }
+
+    /** Reports a box drawn under a scale matrix pinned at the pivot. */
+    public void report(String name, int left, int top, int right, int bottom,
+                       int pivotX, int pivotY, float scale) {
+        report(name, scaled(left, pivotX, scale), scaled(top, pivotY, scale),
+                scaled(right, pivotX, scale), scaled(bottom, pivotY, scale));
+    }
+
+    public static int scaled(int value, int pivot, float scale) {
+        return Math.round(pivot + (value - pivot) * scale);
     }
 
     public Map<String, int[]> getBoxes() {
