@@ -120,7 +120,6 @@ public class ChestStealer extends Module {
             nextAt = System.currentTimeMillis() + (silent ? 100 : InvUtil.reactionDelayMs());
         }
         if (!realChest || transactions.isRecovering() || player.inventory.getItemStack() != null
-                || ActionGuard.getInstance().playerActedLastTick() || InvUtil.isPlayerMoving(player)
                 || System.currentTimeMillis() < nextAt) {
             return;
         }
@@ -139,7 +138,9 @@ public class ChestStealer extends Module {
             }
             return;
         }
-        if (!ActionGuard.getInstance().tryReserve(this)) {
+        // Movement and recent actions pause stealing, but must not keep a finished chest open.
+        if (ActionGuard.getInstance().playerActedLastTick() || InvUtil.isPlayerMoving(player)
+                || !ActionGuard.getInstance().tryReserve(this)) {
             return;
         }
         int slot = target.slotNumber;
