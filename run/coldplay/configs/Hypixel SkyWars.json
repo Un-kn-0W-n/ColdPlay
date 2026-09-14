@@ -44,19 +44,19 @@
         "Target": "Health",
         "Lock": "Switch",
         "Rotation Speed": [
-          23.0,
-          29.5
+          180.0,
+          180.0
         ],
         "Pitch Speed": [
           180.0,
           180.0
         ],
         "Yaw Acceleration": [
-          67.0,
+          92.0,
           100.0
         ],
         "Pitch Acceleration": [
-          68.0,
+          91.0,
           100.0
         ],
         "Yaw Deceleration": [
@@ -114,7 +114,7 @@
       }
     },
     "AutoThrow": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Range": 4.5,
@@ -231,7 +231,9 @@
     "InvMove": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Mode": "Hypixel"
+      }
     },
     "Velocity": {
       "enabled": true,
@@ -360,6 +362,7 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
+        "Mode": "Hypixel",
         "Delay": [
           95.0,
           130.0
