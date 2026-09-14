@@ -21,8 +21,8 @@ import net.minecraft.util.AxisAlignedBB;
 
 public class BackTrack extends Module {
 
-    private final RangeSetting delay = add(new RangeSetting("Delay", 0.0, 50.0, 0.0, 100.0, 25.0)
-            .describe("Hold (ms) on each of the target's position updates, rolled between the thumbs."));
+    private final RangeSetting delay = add(new RangeSetting("Delay", 25.0, 500.0, 25.0, 500.0, 25.0).unit("ms")
+            .describe("Hold on the target's position updates that move it away from you, rolled between the thumbs."));
 
     private final NumberSetting combatTimeout = add(new NumberSetting("Combat Timeout", 3.0, 0.5, 10.0, 0.5)
             .describe("Seconds after your last hit that the victim stays the target."));
@@ -34,15 +34,25 @@ public class BackTrack extends Module {
     private long combatTargetAt;
 
     public BackTrack() {
-        super("BackTrack", Category.COMBAT, "Delays the combat target's position updates so it stays hittable where it was; a box marks where it really is.");
+        super("BackTrack", Category.COMBAT, "Delays the combat target's position updates while it moves away so it stays hittable from further; a box marks where it really is.");
         addAutoOff();
     }
 
     @Override
+    public String getSuffix() {
+        long lo = Math.round(delay.getLo());
+        long hi = Math.round(delay.getHi());
+        return (lo == hi ? String.valueOf(hi) : lo + "-" + hi) + delay.getUnit();
+    }
+
+    @Override
     protected void onDisable() {
+        reset();
+    }
+
+    private void reset() {
         PositionGuard.getInstance().release();
         combatTarget = null;
-        combatTargetAt = 0L;
     }
 
     @EventTarget
@@ -65,9 +75,7 @@ public class BackTrack extends Module {
         }
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.thePlayer == null || mc.theWorld == null) {
-            PositionGuard.getInstance().release();
-            combatTarget = null;
-            combatTargetAt = 0L;
+            reset();
             return;
         }
         if (combatTarget != null
@@ -75,9 +83,8 @@ public class BackTrack extends Module {
                 || System.currentTimeMillis() - combatTargetAt > (long) (combatTimeout.get() * 1000.0))) {
             combatTarget = null;
         }
-        Entity target = combatTarget;
-        if (target != null) {
-            PositionGuard.getInstance().setTarget(target, (long) delay.getLo(), (long) delay.getHi());
+        if (combatTarget != null) {
+            PositionGuard.getInstance().setTarget(combatTarget, (long) delay.getLo(), (long) delay.getHi());
         } else {
             PositionGuard.getInstance().release();
         }
