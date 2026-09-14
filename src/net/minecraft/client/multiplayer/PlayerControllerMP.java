@@ -566,6 +566,10 @@ public class PlayerControllerMP
      */
     public ItemStack windowClick(int windowId, int slotId, int mouseButtonClicked, int mode, EntityPlayer playerIn)
     {
+        // ColdPlay >>> InvMove Hypixel click gate
+        if (playerIn.openContainer.windowId != windowId
+                || coldplay.module.movement.InvMove.deferClick(playerIn, windowId, slotId, mouseButtonClicked, mode)) return null;
+        // ColdPlay <<<
         return windowClick(windowId, slotId, mouseButtonClicked, mode, playerIn, false);
     }
 
@@ -573,6 +577,7 @@ public class PlayerControllerMP
     public boolean automatedWindowClick(int windowId, int slotId, int button, int mode, EntityPlayer playerIn)
     {
         if (playerIn.openContainer.windowId != windowId
+                || coldplay.module.movement.InvMove.isInputPaused(this.mc.currentScreen)
                 || !coldplay.broker.InventoryTransactions.getInstance().canClick(playerIn.openContainer, slotId, button, mode))
             return false;
         windowClick(windowId, slotId, button, mode, playerIn, true);
