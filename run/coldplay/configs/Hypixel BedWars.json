@@ -14,13 +14,26 @@
         "Level": "Aggressive"
       }
     },
+    "AntiBot": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Not In Tab": true,
+        "Invalid Name": true,
+        "Duplicate Name": true,
+        "Zero Ping": true,
+        "Never On Ground": true,
+        "Invisible Spawn": true,
+        "Spawn Radius": 5.0
+      }
+    },
     "AntiFireBall": {
       "enabled": false,
       "keyBind": 0,
       "settings": {}
     },
     "KillAura": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 19,
       "settings": {
         "Players": true,
@@ -39,11 +52,11 @@
           180.0
         ],
         "Yaw Acceleration": [
-          67.0,
+          100.0,
           100.0
         ],
         "Pitch Acceleration": [
-          68.0,
+          100.0,
           100.0
         ],
         "Yaw Deceleration": [
@@ -92,7 +105,7 @@
       }
     },
     "WTap": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Chance": 75.0,
@@ -161,12 +174,12 @@
       }
     },
     "BackTrack": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Delay": [
-          0.0,
-          50.0
+          25.0,
+          75.0
         ],
         "Combat Timeout": 3.0,
         "Ghost Color": -44976,
@@ -189,10 +202,10 @@
       "enabled": false,
       "keyBind": 34,
       "settings": {
-        "Mode": "Normal",
+        "Mode": "Hypixel",
         "AutoSwitch": true,
         "KeepY": false,
-        "Expand": 0.0,
+        "Expand": 1.0,
         "Safety": false,
         "Render": true,
         "Auto Off": false
@@ -218,7 +231,9 @@
     "InvMove": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Mode": "Hypixel"
+      }
     },
     "Velocity": {
       "enabled": true,
@@ -347,6 +362,7 @@
       "enabled": false,
       "keyBind": 0,
       "settings": {
+        "Mode": "Hypixel",
         "Delay": [
           95.0,
           245.0

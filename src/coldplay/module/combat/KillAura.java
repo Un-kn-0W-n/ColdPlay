@@ -86,6 +86,7 @@ public class KillAura extends Module {
     public final BooleanSetting render = add(new BooleanSetting("Render", false)
             .describe("Draw the aim raytrace: a line from your eyes to the targeted spot, marked with a tenth-of-a-block box, "
                     + "plus a HUD graph of the sent yaw/pitch per tick and the turn rates (drag it in the HUD editor)."));
+    private final NumberSetting graphScale = add(HudState.scaleSetting("Graph Scale"));
 
     private Entity target;
     private final Random random = new Random();
@@ -125,6 +126,7 @@ public class KillAura extends Module {
 
     /** Registered for the whole session so the panel can be placed while KillAura is off. */
     public Object graph(HudState hud) {
+        hud.registerScale("RotationGraph", graphScale);
         return new Object() {
             @EventTarget
             public void onRender2D(EventRender2D event) {
@@ -369,7 +371,9 @@ public class KillAura extends Module {
                 resolution.getScaledWidth(), resolution.getScaledHeight());
         int left = pos.x;
         int top = pos.y;
-        hud.report("RotationGraph", left, top, left + panelW, top + panelH);
+        float s = graphScale.get().floatValue();
+        hud.report("RotationGraph", left, top, left + panelW, top + panelH, left, top, s);
+        RenderUtil.pushScale(left, top, s);
         RenderUtil.drawBorderedRect(left, top, left + panelW, top + panelH, COLOR_BOX, COLOR_BORDER);
 
         int x0 = left + GRAPH_PAD;
@@ -403,6 +407,7 @@ public class KillAura extends Module {
         String rates = String.format("rate %.1f / %.1f", sentYawRate[last], sentPitchRate[last]);
         font.drawStringWithShadow(deltas, x0, valuesY, 0xFFFFFFFF);
         font.drawStringWithShadow(rates, x0 + GRAPH_TICKS - font.getStringWidth(rates), valuesY, 0xFFFFFFFF);
+        GlStateManager.popMatrix();
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
         GlStateManager.enableBlend();
     }

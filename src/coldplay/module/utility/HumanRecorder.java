@@ -8,6 +8,7 @@ import coldplay.hud.HudState;
 import coldplay.module.Category;
 import coldplay.module.Module;
 import coldplay.setting.ButtonSetting;
+import coldplay.setting.NumberSetting;
 import coldplay.util.ChatUtil;
 import coldplay.util.RenderUtil;
 import coldplay.util.font.CustomFont;
@@ -42,6 +43,7 @@ public class HumanRecorder extends Module {
 
     private final ArrayDeque<float[]> samples = new ArrayDeque<float[]>(); // cameraYaw, cameraPitch, sentYaw, sentPitch
     private final HudState hud;
+    private final NumberSetting scale;
 
     public HumanRecorder(HudState hud) {
         super("HumanRecorder", Category.UTILITY,
@@ -49,6 +51,8 @@ public class HumanRecorder extends Module {
         this.hud = hud;
         add(new ButtonSetting("Export CSV", this::exportCsv)
                 .describe("Write all recorded samples to coldplay/recordings/ and start fresh."));
+        scale = add(HudState.scaleSetting("Scale"));
+        hud.registerScale("HumanRecorder", scale);
     }
 
     // DRAIN priority so the sample sees the rewritten rotation.
@@ -85,14 +89,18 @@ public class HumanRecorder extends Module {
         HudState.Position state = hud.getOrCreate("HumanRecorder", 3, 60,
                 resolution.getScaledWidth(), resolution.getScaledHeight());
 
+        float s = scale.get().floatValue();
+        RenderUtil.pushScale(state.x, state.y, s);
         RenderUtil.drawBorderedRect(state.x, state.y, state.x + panelW, state.y + panelH,
                 COLOR_BOX, COLOR_BORDER);
         font.drawStringWithShadow(title, state.x + PAD, state.y + PAD, COLOR_TEXT);
         font.drawStringWithShadow(count, state.x + PAD, state.y + PAD + font.getHeight() + GAP,
                 COLOR_DIM);
+        GlStateManager.popMatrix();
 
         if (hud.isEditing()) {
-            hud.report("HumanRecorder", state.x, state.y, state.x + panelW, state.y + panelH);
+            hud.report("HumanRecorder", state.x, state.y, state.x + panelW, state.y + panelH,
+                    state.x, state.y, s);
         }
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
         GlStateManager.enableBlend();

@@ -5,11 +5,13 @@ import coldplay.event.EventTarget;
 import coldplay.hud.HudState;
 import coldplay.module.Category;
 import coldplay.module.Module;
+import coldplay.setting.NumberSetting;
 import coldplay.util.RenderUtil;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.gui.ScaledResolution;
+import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.MathHelper;
 
@@ -25,11 +27,13 @@ public class ArmorStatus extends Module {
     private static final int WIDTH = 4 * ICON + 3 * SLOT_GAP;
     private static final int HEIGHT = ICON + BAR_GAP + BAR_H;
 
+    private final NumberSetting scale = add(HudState.scaleSetting("Scale"));
     private final HudState hud;
 
     public ArmorStatus(HudState hud) {
         super("ArmorStatus", Category.VISUAL, "Shows your equipped armor and its durability.");
         this.hud = hud;
+        hud.registerScale("ArmorStatus", scale);
     }
 
     @EventTarget
@@ -55,6 +59,8 @@ public class ArmorStatus extends Module {
                 "ArmorStatus", resolution.getScaledWidth() / 2 - WIDTH / 2,
                 resolution.getScaledHeight() - 55 - HEIGHT,
                 resolution.getScaledWidth(), resolution.getScaledHeight());
+        float s = scale.get().floatValue();
+        RenderUtil.pushScale(state.x, state.y, s);
 
         // armorInventory is boots-first, so walk 3..0 for helmet..boots
         int x = state.x;
@@ -76,8 +82,9 @@ public class ArmorStatus extends Module {
             }
             x += ICON + SLOT_GAP;
         }
+        GlStateManager.popMatrix();
         if (editing) {
-            hud.report("ArmorStatus", state.x, state.y, state.x + WIDTH, state.y + HEIGHT);
+            hud.report("ArmorStatus", state.x, state.y, state.x + WIDTH, state.y + HEIGHT, state.x, state.y, s);
         }
     }
 }

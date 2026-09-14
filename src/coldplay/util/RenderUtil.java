@@ -387,4 +387,12 @@ public final class RenderUtil {
         drawItem(stack, 0, 0);
         GlStateManager.popMatrix();
     }
+
+    /** Scales later draws around (x, y); close with GlStateManager.popMatrix(). */
+    public static void pushScale(float x, float y, float scale) {
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(x, y, 0.0F);
+        GlStateManager.scale(scale, scale, 1.0F);
+        GlStateManager.translate(-x, -y, 0.0F);
+    }
 }
