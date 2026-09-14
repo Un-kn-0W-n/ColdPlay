@@ -1,0 +1,6 @@
+# Keep the Unix launcher script LF so it stays runnable in bash after a fresh clone
+gradlew        text eol=lf
+*.bat          text eol=crlf
+*.jar          binary
+*.png          binary
+*.bin          binary

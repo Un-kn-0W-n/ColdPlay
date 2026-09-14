@@ -1,0 +1,278 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+import org.gradle.internal.os.OperatingSystem
+
+group = 'cn.timer'
+version = '1.8.9'
+
+ext.lwjglVersion  = '3.3.2'
+
+ext.lwjglNatives = {
+    def os = OperatingSystem.current()
+    if (os.windows) return 'natives-windows'
+    if (os.macOsX)  return 'natives-macos'
+    return 'natives-linux'
+}()
+
+repositories {
+    mavenCentral()
+    maven { url 'https://libraries.minecraft.net' }   // authlib, paulscode, icu4j-core-mojang
+}
+
+sourceSets {
+    main {
+        java.srcDirs      = ['src']
+        resources.srcDirs = ['resources']
+    }
+    test {
+        java.srcDirs = ['test']
+    }
+}
+
+// Minecraft 1.8.9 requires Java 8 even when Gradle runs on a newer JVM.
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(8)
+    }
+}
+
+// core-mojang already supplies FontRenderer's ArabicShaping/Bidi; omit the full transitive ICU library.
+configurations.all { exclude group: 'com.ibm.icu', module: 'icu4j' }
+
+dependencies {
+    implementation 'com.mojang:authlib:1.5.21'
+    implementation 'com.paulscode:codecjorbis:20101023'
+    implementation 'com.paulscode:codecwav:20101023'
+    implementation 'com.paulscode:libraryjavasound:20101123'
+    implementation 'com.paulscode:soundsystem:20120107'
+    implementation 'com.ibm.icu:icu4j-core-mojang:51.2'
+
+    implementation 'commons-codec:commons-codec:1.9'
+    implementation 'commons-io:commons-io:2.4'
+    implementation 'org.apache.commons:commons-lang3:3.3.2'
+    implementation 'commons-logging:commons-logging:1.1.3'
+    implementation 'com.google.code.gson:gson:2.2.4'
+    implementation 'com.google.guava:guava:17.0'
+    implementation 'org.apache.httpcomponents:httpclient:4.3.3'
+    implementation 'org.apache.httpcomponents:httpcore:4.3.2'
+    implementation 'net.sf.jopt-simple:jopt-simple:4.6'
+    implementation 'org.apache.logging.log4j:log4j-api:2.25.5'
+    implementation 'org.apache.logging.log4j:log4j-core:2.25.5'
+    implementation 'io.netty:netty-all:4.1.94.Final'
+    implementation 'com.github.dblock:oshi-core:1.2'
+    implementation 'org.antlr:antlr4:4.9.2'
+
+    implementation platform("org.lwjgl:lwjgl-bom:${lwjglVersion}")
+    implementation 'org.lwjgl:lwjgl'
+    implementation 'org.lwjgl:lwjgl-glfw'
+    implementation 'org.lwjgl:lwjgl-opengl'
+    implementation 'org.lwjgl:lwjgl-openal'
+    implementation 'org.lwjgl:lwjgl-opengles'
+    implementation 'org.lwjgl:lwjgl-opencl'
+
+    // LWJGL extracts natives from the runtime classpath.
+    runtimeOnly "org.lwjgl:lwjgl::${lwjglNatives}"
+    runtimeOnly "org.lwjgl:lwjgl-glfw::${lwjglNatives}"
+    runtimeOnly "org.lwjgl:lwjgl-opengl::${lwjglNatives}"
+    runtimeOnly "org.lwjgl:lwjgl-openal::${lwjglNatives}"
+    runtimeOnly "org.lwjgl:lwjgl-opengles::${lwjglNatives}"
+}
+
+application {
+    mainClass = 'Start'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// Embed the input fingerprint so packet captures can identify a build without hashing during play.
+def packetLogResources = layout.buildDirectory.dir('generated/packetLog')
+tasks.register('packetLogBuildInfo') {
+    def sources = files(fileTree('src') { include '**/*.java' }, 'build.gradle')
+    def bytecode = sourceSets.main.output.classesDirs.asFileTree.matching { include '**/*.class' }
+    dependsOn 'compileJava'
+    inputs.files(sources)
+    inputs.files(bytecode)
+    outputs.dir(packetLogResources)
+    doLast {
+        def fingerprint = { filesToHash ->
+            def digest = java.security.MessageDigest.getInstance('SHA-256')
+            filesToHash.sort { relativePath(it) }.each { source ->
+                digest.update(relativePath(source).replace('\\', '/').getBytes('UTF-8'))
+                digest.update((byte) 0)
+                digest.update(source.bytes)
+                digest.update((byte) 0)
+            }
+            digest.digest().encodeHex().toString()
+        }
+        def output = packetLogResources.get().file('coldplay/build.properties').asFile
+        output.parentFile.mkdirs()
+        output.text = "sourceSha256=${fingerprint(sources.files)}\nclassesSha256=${fingerprint(bytecode.files)}\n"
+    }
+}
+tasks.named('processResources') {
+    dependsOn 'packetLogBuildInfo'
+    from(packetLogResources)
+}
+
+// Override the Windows launcher asset location with -PmcAssetsDir=<path>.
+def mcAssetsDir = project.findProperty('mcAssetsDir')
+        ?: "${System.getProperty('user.home')}/AppData/Roaming/.minecraft/assets"
+
+tasks.register('copyAssets') {
+    description = 'Copies the Minecraft 1.8 assets into run/assets so the client is self-contained.'
+    group = 'minecraft'
+
+    def srcAssets = file(mcAssetsDir)
+    def dstAssets = layout.projectDirectory.dir('run/assets').asFile
+    def indexSrc  = new File(srcAssets, 'indexes/1.8.json')
+    def indexDst  = new File(dstAssets, 'indexes/1.8.json')
+
+    onlyIf { !indexDst.exists() }
+
+    doLast {
+        if (!indexSrc.exists()) {
+            throw new GradleException(
+                "1.8 asset index not found at ${indexSrc}.\n" +
+                "Launch Minecraft 1.8.9 once via the official launcher (so it downloads the assets), " +
+                "or pass -PmcAssetsDir=<path to a .minecraft/assets folder>.")
+        }
+        new File(dstAssets, 'indexes').mkdirs()
+        new File(dstAssets, 'objects').mkdirs()
+        java.nio.file.Files.copy(indexSrc.toPath(), indexDst.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+
+        def json = new groovy.json.JsonSlurper().parse(indexSrc)
+        int copied = 0, missing = 0
+        json.objects.each { name, info ->
+            def hash = info.hash
+            def sub  = hash.substring(0, 2)
+            def from = new File(srcAssets, "objects/${sub}/${hash}")
+            def toDir = new File(dstAssets, "objects/${sub}")
+            toDir.mkdirs()
+            def to = new File(toDir, hash)
+            if (!to.exists()) {
+                if (from.exists()) {
+                    java.nio.file.Files.copy(from.toPath(), to.toPath())
+                    copied++
+                } else {
+                    missing++
+                }
+            }
+        }
+        logger.lifecycle("copyAssets: copied ${copied} objects into ${dstAssets}" +
+                (missing > 0 ? " (${missing} referenced objects were missing from the source)" : ""))
+    }
+}
+
+def java8Launcher = javaToolchains.launcherFor {
+    languageVersion = JavaLanguageVersion.of(8)
+}
+
+tasks.named('run', JavaExec) {
+    description = 'Launches the Minecraft 1.8.9 client.'
+    dependsOn 'copyAssets'
+    javaLauncher = java8Launcher
+
+    def runDir = layout.projectDirectory.dir('run').asFile
+    workingDir = runDir
+    doFirst { runDir.mkdirs() }
+}
+
+tasks.register('coldplayCheck', JavaExec) {
+    description = 'Runs ColdPlay dependency-free assertion checks.'
+    group = 'verification'
+    dependsOn 'testClasses'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'coldplay.ColdPlayCheck'
+    javaLauncher = java8Launcher
+    enableAssertions = true
+    onlyIf { file('test').directory } // test sources are not distributed
+}
+
+tasks.named('check') {
+    dependsOn 'coldplayCheck'
+}
+
+// A launcher version needs the full client and its dependencies, including LWJGL 3 natives.
+configurations { releaseNatives }
+dependencies {
+    ['natives-windows', 'natives-linux', 'natives-macos'].each { platform ->
+        ['lwjgl', 'lwjgl-glfw', 'lwjgl-opengl', 'lwjgl-openal', 'lwjgl-opengles'].each { library ->
+            releaseNatives "org.lwjgl:${library}:${lwjglVersion}:${platform}"
+        }
+    }
+}
+
+def releaseJar = tasks.register('releaseJar', Jar) {
+    group = 'build'
+    description = 'Builds the complete Minecraft 1.8.9 client for 64-bit Windows, Linux and Intel macOS.'
+    archiveFileName = 'ColdPlay-1.8.9.jar'
+    destinationDirectory = layout.buildDirectory.dir('release')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+    manifest { attributes 'Main-Class': 'net.minecraft.client.main.Main', 'Multi-Release': 'true' }
+    from(sourceSets.main.output)
+    from({ (configurations.runtimeClasspath + configurations.releaseNatives).collect { zipTree(it) } })
+    exclude '.files.swp', 'META-INF/*.SF', 'META-INF/*.RSA', 'META-INF/*.DSA', 'META-INF/INDEX.LIST'
+    exclude 'module-info.class', 'META-INF/versions/**/module-info.class'
+    exclude '**/*.[mM][dD]', '**/*.markdown'
+}
+
+def releaseZip = tasks.register('releaseZip', Zip) {
+    group = 'distribution'
+    description = 'Packages the launcher version, installation instructions and shared configs.'
+    archiveFileName = 'ColdPlay-1.8.9.zip'
+    destinationDirectory = layout.buildDirectory.dir('release')
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+    into('versions/ColdPlay-1.8.9') {
+        from(releaseJar)
+        from('distribution/ColdPlay-1.8.9.json')
+    }
+    into('coldplay/configs') { from('run/coldplay/configs') { include '*.json' } }
+    from('INSTALL.txt', 'LICENSE')
+}
+
+tasks.register('verifyRelease') {
+    group = 'verification'
+    description = 'Checks release contents and rejects private data, external packs and local tooling.'
+    dependsOn releaseZip, 'check'
+    doLast {
+        def forbidden = ~/(?i)(^|\/)((alts|proxy|proxies|accounts)\.(json|txt|csv|ya?ml|dat|db|sqlite)(\.[^\/]+)?|launcher_(accounts|profiles)\.json|\.env(\.[^\/]+)?|resourcepacks|server-resource-packs|shaderpacks)(\/|$)|(?i)\.(md|markdown|token|pem|key|p12|pfx|jks)$/
+        assert 'coldplay/alts.json.bak' =~ forbidden
+        assert 'coldplay/proxies.txt' =~ forbidden
+        assert !('org/apache/http/impl/execchain/Proxies.class' =~ forbidden)
+        [releaseJar.get().archiveFile.get().asFile, releaseZip.get().archiveFile.get().asFile].each { archive ->
+            new java.util.zip.ZipFile(archive).withCloseable { zip ->
+                def names = zip.entries().collect { it.name }
+                def unwanted = names.findAll { it =~ forbidden }
+                if (unwanted) throw new GradleException("Unwanted release entries: ${unwanted}")
+                if (archive.name.endsWith('.jar')) {
+                    ['net/minecraft/client/main/Main.class', 'coldplay/ColdPlay.class',
+                     'org/lwjgl/glfw/GLFW.class', 'assets/minecraft/textures/blocks/stone.png'].each { name ->
+                        if (!names.contains(name)) throw new GradleException("Missing client entry: ${name}")
+                    }
+                } else {
+                    def profiles = fileTree('run/coldplay/configs').matching { include '*.json' }.files
+                    if (profiles.size() != 6) throw new GradleException('Expected six shared config profiles')
+                    profiles.each { profile ->
+                        def entry = zip.getEntry("coldplay/configs/${profile.name}")
+                        if (!entry || zip.getInputStream(entry).bytes != profile.bytes)
+                            throw new GradleException("Missing or changed config: ${profile.name}")
+                    }
+                    def entry = zip.getEntry('versions/ColdPlay-1.8.9/ColdPlay-1.8.9.json')
+                    def metadata = new groovy.json.JsonSlurper().parse(zip.getInputStream(entry))
+                    if (metadata.id != 'ColdPlay-1.8.9' || metadata.mainClass != 'net.minecraft.client.main.Main'
+                            || metadata.libraries != [] || metadata.downloads)
+                        throw new GradleException('Invalid launcher version metadata')
+                }
+            }
+        }
+    }
+}
