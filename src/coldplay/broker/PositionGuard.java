@@ -40,6 +40,8 @@ public final class PositionGuard {
     private long delayHi;
     private final ArrayDeque<Pending> queue = new ArrayDeque<Pending>();
     private long lastReleaseAtNanos;
+    private double lastX, lastY, lastZ;
+    private boolean hasLast;
 
     private PositionGuard() {
     }
@@ -67,7 +69,13 @@ public final class PositionGuard {
         if (player == null) {
             return false;
         }
-        if (player.getDistanceSq(x, y, z) < player.getDistanceSq(entity.posX, entity.posY, entity.posZ)) {
+        // only hold updates that move the target further from us than its last real position
+        boolean movingAway = hasLast && player.getDistanceSq(x, y, z) > player.getDistanceSq(lastX, lastY, lastZ);
+        lastX = x;
+        lastY = y;
+        lastZ = z;
+        hasLast = true;
+        if (!movingAway) {
             queue.clear();
             lastReleaseAtNanos = 0L;
             return false;
@@ -147,6 +155,7 @@ public final class PositionGuard {
         queue.clear();
         target = null;
         lastReleaseAtNanos = 0L;
+        hasLast = false;
     }
 
     public double[] getRealPos() {

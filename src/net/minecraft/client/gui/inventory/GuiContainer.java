@@ -746,6 +746,7 @@ public abstract class GuiContainer extends GuiScreen
      */
     public void onGuiClosed()
     {
+        coldplay.module.movement.InvMove.screenClosed(this);
         if (this.mc.thePlayer != null)
         {
             this.inventorySlots.onContainerClosed(this.mc.thePlayer);
