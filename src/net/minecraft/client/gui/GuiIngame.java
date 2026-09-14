@@ -194,7 +194,10 @@ public class GuiIngame extends Gui {
             if (l1 > 255) l1 = 255;
             if (l1 > 8) {
                 GlStateManager.pushMatrix();
-                GlStateManager.translate(i / 2f, j - 68, 0.0F);
+                // ColdPlay >>> keep the action bar above the status bars
+                GlStateManager.translate(i / 2f, this.mc.playerController.shouldDrawHUD()
+                        ? coldplay.hud.StatusBars.stackTop(scaledresolution, this.mc.thePlayer) - 19 : j - 68, 0.0F);
+                // ColdPlay <<<
                 GlStateManager.enableBlend();
                 GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
                 int l = 16777215;
@@ -311,6 +314,11 @@ public class GuiIngame extends Gui {
     }
 
     public void renderExpBar(final ScaledResolution scaledRes, final int x) {
+        // ColdPlay >>> slim XP rail
+        if (coldplay.hud.StatusBars.renderExperience(scaledRes, this.mc.thePlayer)) {
+            return;
+        }
+        // ColdPlay <<<
         this.mc.mcProfiler.startSection("expBar");
         this.mc.getTextureManager().bindTexture(Gui.icons);
         final int i = this.mc.thePlayer.xpBarCap();
@@ -344,8 +352,11 @@ public class GuiIngame extends Gui {
             String s = this.highlightingItemStack.getDisplayName();
             if (this.highlightingItemStack.hasDisplayName()) s = EnumChatFormatting.ITALIC + s;
             final int i = (scaledRes.getScaledWidth() - this.getFontRenderer().getStringWidth(s)) / 2;
-            int j = scaledRes.getScaledHeight() - 59;
-            if (!this.mc.playerController.shouldDrawHUD()) j += 14;
+            // ColdPlay >>> clear the status bars
+            final int j = this.mc.playerController.shouldDrawHUD()
+                    ? coldplay.hud.StatusBars.stackTop(scaledRes, this.mc.thePlayer) - 10
+                    : scaledRes.getScaledHeight() - 45;
+            // ColdPlay <<<
             int k = (int) (this.remainingHighlightTicks * 256.0F / 10.0F);
             if (k > 255) k = 255;
             if (k > 0) {
@@ -427,6 +438,11 @@ public class GuiIngame extends Gui {
     }
 
     private void renderPlayerStats(final ScaledResolution scaledRes) {
+        // ColdPlay >>> pill status bars
+        if (coldplay.hud.StatusBars.render(scaledRes, this)) {
+            return;
+        }
+        // ColdPlay <<<
         if (this.mc.getRenderViewEntity() instanceof EntityPlayer) {
             EntityPlayer entityplayer = (EntityPlayer) this.mc.getRenderViewEntity();
             final int i = MathHelper.ceiling_float_int(entityplayer.getHealth());
