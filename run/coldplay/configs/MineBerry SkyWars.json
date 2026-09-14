@@ -14,13 +14,26 @@
         "Level": "Normal"
       }
     },
+    "AntiBot": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Not In Tab": true,
+        "Invalid Name": true,
+        "Duplicate Name": true,
+        "Zero Ping": true,
+        "Never On Ground": true,
+        "Invisible Spawn": true,
+        "Spawn Radius": 5.0
+      }
+    },
     "AntiFireBall": {
       "enabled": false,
       "keyBind": 0,
       "settings": {}
     },
     "KillAura": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 19,
       "settings": {
         "Players": true,
@@ -218,7 +231,9 @@
     "InvMove": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Mode": "Hypixel"
+      }
     },
     "Velocity": {
       "enabled": false,
@@ -347,6 +362,7 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
+        "Mode": "Normal",
         "Delay": [
           150.0,
           190.0
