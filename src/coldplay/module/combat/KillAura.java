@@ -118,6 +118,11 @@ public class KillAura extends Module {
     private final float[] sentPitchRate = new float[GRAPH_TICKS];
     private int graphHead; // next write slot
     private int graphCount;
+    @Override
+    public String getSuffix() {
+        return lock.get();
+    }
+
     /** Registered for the whole session so the panel can be placed while KillAura is off. */
     public Object graph(HudState hud) {
         return new Object() {

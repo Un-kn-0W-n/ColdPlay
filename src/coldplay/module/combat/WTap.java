@@ -25,6 +25,11 @@ public class WTap extends Module {
     }
 
     @Override
+    public String getSuffix() {
+        return Math.round(chance.get()) + "%";
+    }
+
+    @Override
     protected void onDisable() {
         phase = 0;
         backTap = false;
