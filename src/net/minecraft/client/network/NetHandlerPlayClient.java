@@ -765,6 +765,8 @@ public class NetHandlerPlayClient implements INetHandlerPlayClient {
                 this.gameController.getSoundHandler().playSound(new GuardianSound((EntityGuardian) entity));
             } else {
                 entity.handleStatusUpdate(packetIn.getOpCode());
+                // ColdPlay >>> HurtClock
+                coldplay.broker.HurtClock.getInstance().onStatus(entity, packetIn.getOpCode());
             }
         }
     }

@@ -14,6 +14,7 @@ import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.INetHandlerPlayClient;
 import net.minecraft.network.play.server.S12PacketEntityVelocity;
+import net.minecraft.network.play.server.S19PacketEntityStatus;
 
 import java.util.ArrayDeque;
 import java.util.Random;
@@ -24,13 +25,13 @@ public class Velocity extends Module {
     private static final int MAX_HOLD_TICKS = 3;
     private static Velocity instance;
     public final ModeSetting mode = add(new ModeSetting("Mode", LEGIT, LEGIT, HYPIXEL)
-            .describe("Legit auto-jumps on knockback. Hypixel holds air knockback until you land, then jump-resets."));
+            .describe("Legit auto-jumps on knockback. Hypixel holds melee knockback until you land, then jump-resets."));
     public final NumberSetting chance = add(new NumberSetting("Chance", 100.0, 10.0, 100.0, 1.0)
             .describe("% chance to auto-jump on each knockback you take."));
 
     private final Random random = new Random();
     private final ArrayDeque<Runnable> held = new ArrayDeque<>();
-    private boolean pendingHit, released, releasing;
+    private boolean pendingHit, released, releasing, hurtLast;
     private int heldTicks;
 
     public Velocity() {
@@ -43,14 +44,19 @@ public class Velocity extends Module {
         return LEGIT.equals(mode.get());
     }
 
-    /** Runs in the scheduled-task drain. Hypixel mode keeps our S12 and every packet after it, transactions included. */
+    /** Runs in the scheduled-task drain. Hypixel mode keeps a melee S12 and every packet after it, transactions included. */
     public static boolean hold(Packet<?> packet, Object handler, Runnable task) {
         Velocity m = instance;
         EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
         if (m == null || m.releasing || !(handler instanceof INetHandlerPlayClient)) {
             return false;
         }
-        if (m.held.isEmpty() && (!m.isEnabled() || m.legit() || player == null
+        // melee sends our S12 right after our hurt status, other knockback has no hurt status or our metadata between
+        boolean melee = m.hurtLast;
+        m.hurtLast = player != null && packet instanceof S19PacketEntityStatus
+                && ((S19PacketEntityStatus) packet).getOpCode() == 2
+                && ((S19PacketEntityStatus) packet).getEntity(player.worldObj) == player;
+        if (m.held.isEmpty() && (!melee || !m.isEnabled() || m.legit() || player == null
                 || !(packet instanceof S12PacketEntityVelocity)
                 || ((S12PacketEntityVelocity) packet).getEntityID() != player.getEntityId())) {
             return false;

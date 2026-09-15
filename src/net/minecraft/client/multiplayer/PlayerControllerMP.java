@@ -418,6 +418,13 @@ public class PlayerControllerMP
         }
     }
 
+    // ColdPlay >>> slot the server holds
+    public int getCurrentPlayerItem()
+    {
+        return this.currentPlayerItem;
+    }
+    // ColdPlay <<<
+
     public boolean onPlayerRightClick(EntityPlayerSP player, WorldClient worldIn, ItemStack heldStack, BlockPos hitPos, EnumFacing side, Vec3 hitVec)
     {
         this.syncCurrentPlayItem();
