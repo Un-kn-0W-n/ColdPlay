@@ -65,7 +65,8 @@ public class Session
     public static enum Type
     {
         LEGACY("legacy"),
-        MOJANG("mojang");
+        MOJANG("mojang"),
+        MSA("msa"); // ColdPlay: launchers pass msa for Microsoft accounts
 
         private static final Map<String, Type> SESSION_TYPES = Maps.<String, Type>newHashMap();
         private final String sessionType;

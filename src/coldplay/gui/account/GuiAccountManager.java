@@ -172,7 +172,8 @@ public class GuiAccountManager extends GuiScreen {
         BackgroundShader.drawSectionTitle("Account Manager", this.width / 2f, this.titleY);
         final Session session = this.mc.getSession();
         if (font != null && session != null) {
-            final boolean premium = session.getSessionType() == Session.Type.MOJANG;
+            final Session.Type type = session.getSessionType();
+            final boolean premium = type == Session.Type.MOJANG || type == Session.Type.MSA;
             final String label = session.getUsername() + (premium ? " (Premium)" : " (Offline)");
             font.drawCentered(label, this.width / 2f, this.subtitleY, premium ? Theme.FROST : Theme.TEXT_DIM);
         }
