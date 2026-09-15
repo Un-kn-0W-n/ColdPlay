@@ -239,16 +239,40 @@ def releaseZip = tasks.register('releaseZip', Zip) {
     from('INSTALL.txt', 'LICENSE')
 }
 
+// The instance replaces Prism's net.minecraft component, so vanilla's LWJGL 2 and netty 4.0 never reach the classpath.
+def releasePrismZip = tasks.register('releasePrismZip', Zip) {
+    group = 'distribution'
+    description = 'Packages an instance that Prism Launcher can import.'
+    archiveFileName = 'ColdPlay-1.8.9-Prism.zip'
+    destinationDirectory = layout.buildDirectory.dir('release')
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+    from('distribution/prism')
+    into('libraries') { from(releaseJar) }
+    into('minecraft/coldplay/configs') { from('run/coldplay/configs') { include '*.json' } }
+    from('LICENSE')
+}
+
 tasks.register('verifyRelease') {
     group = 'verification'
     description = 'Checks release contents and rejects private data, external packs and local tooling.'
-    dependsOn releaseZip, 'check'
+    dependsOn releaseZip, releasePrismZip, 'check'
     doLast {
         def forbidden = ~/(?i)(^|\/)((alts|proxy|proxies|accounts)\.(json|txt|csv|ya?ml|dat|db|sqlite)(\.[^\/]+)?|launcher_(accounts|profiles)\.json|\.env(\.[^\/]+)?|resourcepacks|server-resource-packs|shaderpacks)(\/|$)|(?i)\.(md|markdown|token|pem|key|p12|pfx|jks)$/
         assert 'coldplay/alts.json.bak' =~ forbidden
         assert 'coldplay/proxies.txt' =~ forbidden
         assert !('org/apache/http/impl/execchain/Proxies.class' =~ forbidden)
-        [releaseJar.get().archiveFile.get().asFile, releaseZip.get().archiveFile.get().asFile].each { archive ->
+        def profiles = fileTree('run/coldplay/configs').matching { include '*.json' }.files
+        if (profiles.size() != 6) throw new GradleException('Expected six shared config profiles')
+        def checkProfiles = { zip, prefix ->
+            profiles.each { profile ->
+                def entry = zip.getEntry("${prefix}/${profile.name}")
+                if (!entry || zip.getInputStream(entry).bytes != profile.bytes)
+                    throw new GradleException("Missing or changed config: ${profile.name}")
+            }
+        }
+        def parseJson = { zip, name -> new groovy.json.JsonSlurper().parse(zip.getInputStream(zip.getEntry(name))) }
+        [releaseJar, releaseZip, releasePrismZip].collect { it.get().archiveFile.get().asFile }.each { archive ->
             new java.util.zip.ZipFile(archive).withCloseable { zip ->
                 def names = zip.entries().collect { it.name }
                 def unwanted = names.findAll { it =~ forbidden }
@@ -258,16 +282,23 @@ tasks.register('verifyRelease') {
                      'org/lwjgl/glfw/GLFW.class', 'assets/minecraft/textures/blocks/stone.png'].each { name ->
                         if (!names.contains(name)) throw new GradleException("Missing client entry: ${name}")
                     }
-                } else {
-                    def profiles = fileTree('run/coldplay/configs').matching { include '*.json' }.files
-                    if (profiles.size() != 6) throw new GradleException('Expected six shared config profiles')
-                    profiles.each { profile ->
-                        def entry = zip.getEntry("coldplay/configs/${profile.name}")
-                        if (!entry || zip.getInputStream(entry).bytes != profile.bytes)
-                            throw new GradleException("Missing or changed config: ${profile.name}")
+                } else if (archive.name.endsWith('-Prism.zip')) {
+                    ['instance.cfg', 'mmc-pack.json', 'patches/net.minecraft.json'].each { name ->
+                        if (!names.contains(name)) throw new GradleException("Missing Prism entry: ${name}")
                     }
-                    def entry = zip.getEntry('versions/ColdPlay-1.8.9/ColdPlay-1.8.9.json')
-                    def metadata = new groovy.json.JsonSlurper().parse(zip.getInputStream(entry))
+                    // Prism imports a dropped zip with a shaders folder as a shader pack.
+                    if (names.any { it =~ /(^|\/)shaders\// }) throw new GradleException('Prism instance contains a shaders folder')
+                    checkProfiles(zip, 'minecraft/coldplay/configs')
+                    if (parseJson(zip, 'mmc-pack.json').components*.uid != ['net.minecraft'])
+                        throw new GradleException('Prism instance must contain only the net.minecraft component')
+                    def patch = parseJson(zip, 'patches/net.minecraft.json')
+                    if (patch.uid != 'net.minecraft' || patch.mainClass != 'net.minecraft.client.main.Main'
+                            || patch.libraries || patch.requires || patch.mainJar?.'MMC-hint' != 'local'
+                            || !names.contains('libraries/' + patch.mainJar.'MMC-filename'))
+                        throw new GradleException('Invalid Prism component metadata')
+                } else {
+                    checkProfiles(zip, 'coldplay/configs')
+                    def metadata = parseJson(zip, 'versions/ColdPlay-1.8.9/ColdPlay-1.8.9.json')
                     if (metadata.id != 'ColdPlay-1.8.9' || metadata.mainClass != 'net.minecraft.client.main.Main'
                             || metadata.libraries != [] || metadata.downloads)
                         throw new GradleException('Invalid launcher version metadata')

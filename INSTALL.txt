@@ -1,9 +1,10 @@
 ColdPlay for Minecraft 1.8.9
 
-Download ColdPlay-1.8.9.zip from the repository's Releases page:
+Download ColdPlay-1.8.9.zip for the official launcher, or ColdPlay-1.8.9-Prism.zip
+for Prism Launcher, from the repository's Releases page:
 https://github.com/Un-kn-0W-n/ColdPlay/releases/latest
 
-Installation (64-bit Windows, Linux, or Intel macOS; Java 8)
+Official launcher installation (64-bit Windows, Linux, or Intel macOS; Java 8)
 1. Launch vanilla Minecraft 1.8.9 once to download its assets, then close the game
    and launcher. Sign in using your own Minecraft account.
 2. Extract ColdPlay-1.8.9.zip into your Minecraft game directory. On Windows the
@@ -17,6 +18,17 @@ Installation (64-bit Windows, Linux, or Intel macOS; Java 8)
    On macOS, add -XstartOnFirstThread to that installation's JVM arguments.
 5. Play. Press Right Shift to open the client GUI. Open Settings to load one of
    the six shared profiles. Back up existing profiles before replacing them.
+
+Prism Launcher installation (64-bit Windows, Linux, or Intel macOS)
+1. In Prism Launcher, click Add Instance, choose Import, and select
+   ColdPlay-1.8.9-Prism.zip or paste its download link:
+   https://github.com/Un-kn-0W-n/ColdPlay/releases/latest/download/ColdPlay-1.8.9-Prism.zip
+2. Select the ColdPlay 1.8.9 instance and click Launch. Prism downloads Java 8 and
+   the game assets itself, and the six shared profiles are already installed.
+3. Do not click Revert or change the Minecraft version on the instance's Version
+   page. That removes ColdPlay from the instance. To update, click Folder on the
+   instance and replace libraries/ColdPlay-1.8.9.jar with the new release JAR.
+MultiMC is not supported.
 
 ColdPlay is a complete client version, not a Forge/Fabric mod. Do not place the
 JAR in mods or replace the vanilla 1.8.9 JAR. If you use a separate game directory,
