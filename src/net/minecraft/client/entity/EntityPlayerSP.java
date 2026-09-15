@@ -586,7 +586,7 @@ public class EntityPlayerSP extends AbstractClientPlayer {
 		this.movementInput.sneak = cpStrafe.isSneak();
 		this.coldplayMoveYaw = moveFixActive ? cpStrafe.getYaw() : this.rotationYaw;
 		// ColdPlay <<<
-		if ((this.isUsingItem() || coldplay.broker.SwordBlock.getInstance().slowedThisTick()) && !this.isRiding()) {
+		if ((this.isUsingItem() || coldplay.broker.SwordBlock.getInstance().slowedThisTick()) && !this.isRiding() && !coldplay.module.movement.NoSlow.skipSlowdown(this)) {
 			this.movementInput.moveStrafe *= 0.2F;
 			this.movementInput.moveForward *= 0.2F;
 			this.sprintToggleTimer = 0;

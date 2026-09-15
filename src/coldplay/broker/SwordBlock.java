@@ -51,6 +51,20 @@ public final class SwordBlock {
         this.blinkTicks = blinkTicks;
     }
 
+    /** True once nothing is held and no burst block is left on the server. */
+    public boolean isIdle() {
+        return !armed && !serverBlocking && held.isEmpty();
+    }
+
+    /** Disarms. A hold that never burst is sent now, since only a burst releases it; otherwise the next burst does. */
+    public void disarm() {
+        armed = false;
+        if (!serverBlocking) {
+            drain(held);
+            heldFlying = 0;
+        }
+    }
+
     /** Drops held packets; with sameConnection, protocol replies are still sent. */
     public void reset(boolean sameConnection) {
         armed = false;
