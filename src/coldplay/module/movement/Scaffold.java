@@ -43,11 +43,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Hypixel and Polar walk-bridge behind a spoofed backward look, Telly sprint-jump bridges. Hypixel and Telly
- * click what this tick's look raytraces onto, the way vanilla does. Polar picks a cell after physics and
- * verifies it against the sent look before placing.
+ * click what this tick's look raytraces onto, the way vanilla does. Polar traces its pitch after physics and
+ * clicks what the sent look raytraces onto on the next tick.
  */
 public class Scaffold extends Module {
 
@@ -59,8 +60,8 @@ public class Scaffold extends Module {
     public final ModeSetting mode = add(new ModeSetting("Mode", HYPIXEL, HYPIXEL, POLAR, TELLY)
             .describe("Hypixel: walk-bridge holding yaw - 180, pitch raytraced onto the support block. "
                     + "Polar: walk-bridge holding "
-                    + "yaw - 180 (- 45 or + 45 on a straight walk, flat on a diagonal) and a locked 75.8 "
-                    + "pitch until you disable it. Telly: sprint-jump "
+                    + "yaw - 180 (45 back toward the middle of the bridge on a straight walk, none on a "
+                    + "diagonal), pitch raytraced onto the side of the support. Telly: sprint-jump "
                     + "bridge, auto-jumps facing forward, turns back 120, 159 and 180 degrees over the first "
                     + "three airborne ticks and places from the third on, only on a tick that turns 38 degrees "
                     + "or less and whose look raytraces onto the support."));
@@ -98,9 +99,11 @@ public class Scaffold extends Module {
     private static final int TELLY_PLACE_TICK = 3; // first airborne tick allowed to click
     private static final float MAX_PLACE_TURN = 38.0F; // yaw plus pitch degrees on a placing tick, the server flags past 40
 
-    private static final float POLAR_PITCH = 75.8F;
     private static final float POLAR_STRAIGHT_OFFSET = 45.0F; // degrees off the hold on a straight walk
-    private static final float POLAR_AXIS_TOLERANCE = 22.5F; // degrees off a world axis
+    private static final float POLAR_ENTER_AXIS = 20.0F; // degrees off a world axis to start a straight walk
+    private static final float POLAR_LEAVE_AXIS = 25.0F; // and to end one
+    private static final double POLAR_SIDE_BAND = 0.2D; // blocks off the row centre before the offset changes side
+    private static final float POLAR_SCAN_STEP = 0.15F; // the edge windows are a few tenths of a degree wide
 
 
     private final Random rand = new Random();
@@ -109,11 +112,12 @@ public class Scaffold extends Module {
     private int planeY = Integer.MIN_VALUE; // MIN_VALUE until seeded
     private BlockPos ground; // cell last stood on
     private boolean rising; // jump key seen since leaving the ground
-    private float heldPitch; // Hypixel: last aimed pitch
+    private float heldPitch; // Hypixel and Polar: last aimed pitch
     private long insetSalt;
 
     private int offGroundTicks; // counted at EventUpdate PRE, before onAim reads it
     private float polarSide; // Polar: -1 or +1, the way a straight walk offsets
+    private boolean polarStraight;
 
     public Scaffold() {
         super("Scaffold", Category.MOVEMENT,
@@ -128,6 +132,7 @@ public class Scaffold extends Module {
         heldPitch = FALLBACK_PITCH;
         insetSalt = rand.nextLong();
         polarSide = -1.0F;
+        polarStraight = true;
         ground = null;
         rising = false;
         offGroundTicks = 0;
@@ -156,14 +161,47 @@ public class Scaffold extends Module {
         return MathHelper.wrapAngleTo180_float(yaw + 180.0F);
     }
 
-    private float polarYaw(float move, float side) {
-        float offset = straightWalk(move) ? side * POLAR_STRAIGHT_OFFSET : 0.0F;
+    static float polarYaw(float move, boolean straight, float side) {
+        float offset = straight ? side * POLAR_STRAIGHT_OFFSET : 0.0F;
         return MathHelper.wrapAngleTo180_float(backward(move) + offset);
     }
 
-    static boolean straightWalk(float moveYaw) {
+    /** Travel within a few degrees of a world axis, with some slack so a wobbling mouse cannot toggle the offset. */
+    static boolean straightWalk(float moveYaw, boolean straight) {
         float axisYaw = EnumFacing.fromAngle(moveYaw).getHorizontalIndex() * 90.0F;
-        return Math.abs(MathHelper.wrapAngleTo180_float(moveYaw - axisYaw)) <= POLAR_AXIS_TOLERANCE;
+        float off = Math.abs(MathHelper.wrapAngleTo180_float(moveYaw - axisYaw));
+        return off <= (straight ? POLAR_LEAVE_AXIS : POLAR_ENTER_AXIS);
+    }
+
+    /**
+     * The offset whose ray slants back toward the middle of the bridge row, from the player's offset off the
+     * middle of the block it stands on. The ray on the far side of the middle misses the support for part of
+     * each stride.
+     */
+    static float polarSide(double offsetX, double offsetZ, float moveYaw, float side) {
+        double axis = Math.toRadians(EnumFacing.fromAngle(moveYaw).getHorizontalIndex() * 90.0D);
+        double right = -offsetX * Math.cos(axis) - offsetZ * Math.sin(axis);
+        return Math.abs(right) > POLAR_SIDE_BAND ? Math.signum((float) right) : side;
+    }
+
+    /** The solid block under the feet nearest the player's middle, else the cell under its middle. */
+    private static BlockPos standingOn(WorldClient world, EntityPlayerSP player) {
+        AxisAlignedBB box = player.getEntityBoundingBox();
+        int y = MathHelper.floor_double(box.minY) - 1;
+        BlockPos best = new BlockPos(player.posX, y, player.posZ);
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (int x = MathHelper.floor_double(box.minX); x <= MathHelper.floor_double(box.maxX - 1.0E-7D); x++) {
+            for (int z = MathHelper.floor_double(box.minZ); z <= MathHelper.floor_double(box.maxZ - 1.0E-7D); z++) {
+                BlockPos pos = new BlockPos(x, y, z);
+                double dx = x + 0.5D - player.posX;
+                double dz = z + 0.5D - player.posZ;
+                if (dx * dx + dz * dz < bestDistance && world.getBlockState(pos).getBlock().getMaterial().isSolid()) {
+                    best = pos;
+                    bestDistance = dx * dx + dz * dz;
+                }
+            }
+        }
+        return best;
     }
 
     /** The camera on the ground, then 120, 159 and 180 degrees back over the first airborne ticks. */
@@ -191,7 +229,7 @@ public class Scaffold extends Module {
         return Math.max(0.0F, (float) Math.floor((degrees - 0.001F) / gcd) * gcd);
     }
 
-    /** The look request. Polar's pitch is locked; Hypixel and Telly aim theirs here. */
+    /** The look request. Hypixel and Telly aim here; Polar re-aims after physics in onMotionAim. */
     @EventTarget(priority = EventPriority.AIM)
     public void onAim(EventUpdate event) {
         Minecraft mc = Minecraft.getMinecraft();
@@ -212,7 +250,7 @@ public class Scaffold extends Module {
             }
             rm.request(this, yaw, aimHypixel(mc, player, yaw, pitch), PRIORITY, TURN_RATE);
         } else if (polar()) {
-            rm.request(this, polarYaw(move, polarSide), POLAR_PITCH, PRIORITY, TURN_RATE);
+            rm.request(this, polarYaw(move, polarStraight, polarSide), heldPitch, PRIORITY, TURN_RATE);
         } else {
             aimTelly(mc, player, rm, yaw, pitch);
         }
@@ -244,22 +282,26 @@ public class Scaffold extends Module {
         rm.request(this, yaw + yawStep, pitch + pitchStep, PRIORITY, TURN_RATE);
     }
 
-    /**
-     * Pitch along {@code yaw} that lands on a support of the best wanted cell. Keeps the current pitch while
-     * it still does, otherwise takes the middle of the run that does.
-     */
     private float aimHypixel(Minecraft mc, EntityPlayerSP player, float yaw, float current) {
         WorldClient world = mc.theWorld;
         Vec3 eyes = player.getPositionEyes(1.0F);
         wanted = new ArrayList<>(candidateCells(mc, player, world));
+        return scanPitch(current, SCAN_STEP, pitch -> clickAlong(world, eyes, RotationManager.lookVec(yaw, pitch)));
+    }
+
+    /**
+     * Pitch whose click fills the best wanted cell. Keeps the current pitch while it still does, otherwise
+     * takes the middle of the pitches that do.
+     */
+    private float scanPitch(float current, float spacing, Function<Float, Placement> click) {
         float gcd = RotationManager.gcdStep();
-        float step = gcd * Math.max(1, Math.round(SCAN_STEP / gcd));
+        float step = gcd * Math.max(1, Math.round(spacing / gcd));
         float start = current + RotationManager.gcdSnap(SCAN_MIN_PITCH - current);
         int bestRank = Integer.MAX_VALUE;
         List<Float> hits = new ArrayList<>();
         for (int i = 0; start + i * step <= 90.0F; i++) {
             float pitch = start + i * step;
-            Placement p = clickAlong(world, eyes, RotationManager.lookVec(yaw, pitch));
+            Placement p = click.apply(pitch);
             if (p == null) {
                 continue;
             }
@@ -276,9 +318,9 @@ public class Scaffold extends Module {
             pending = null;
             return heldPitch;
         }
-        Placement now = clickAlong(world, eyes, RotationManager.lookVec(yaw, current));
+        Placement now = click.apply(current);
         heldPitch = now != null && wanted.indexOf(now.target) == bestRank ? current : hits.get(hits.size() / 2);
-        pending = clickAlong(world, eyes, RotationManager.lookVec(yaw, heldPitch));
+        pending = click.apply(heldPitch);
         return heldPitch;
     }
 
@@ -296,6 +338,27 @@ public class Scaffold extends Module {
             return null;
         }
         return new Placement(target, hit.getBlockPos(), hit.sideHit, hit.hitVec);
+    }
+
+    /**
+     * Polar's click along a look. The table trig here and the server's can put a grazing ray on different
+     * faces, so exact trig has to agree on the block and face.
+     */
+    private Placement polarClick(WorldClient world, Vec3 eyes, float yaw, float pitch) {
+        Placement p = clickAlong(world, eyes, RotationManager.lookVec(yaw, pitch));
+        if (p == null) {
+            return null;
+        }
+        MovingObjectPosition exact = RayTraceUtil.traceToLook(world, eyes, exactLook(yaw, pitch),
+                PlacementUtil.SERVER_REACH, false, false, true);
+        return RayTraceUtil.matchesBlock(exact, p.support, p.face) ? p : null;
+    }
+
+    private static Vec3 exactLook(float yaw, float pitch) {
+        double yawRad = Math.toRadians(yaw);
+        double pitchRad = Math.toRadians(pitch);
+        return new Vec3(-Math.sin(yawRad) * Math.cos(pitchRad), -Math.sin(pitchRad),
+                Math.cos(yawRad) * Math.cos(pitchRad));
     }
 
     /**
@@ -330,29 +393,39 @@ public class Scaffold extends Module {
         });
     }
 
-    /** Polar selects and aims from the position this tick's packet carries, after movement. */
+    /** Polar aims from the position this tick's packet carries, after movement. */
     @EventTarget(priority = EventPriority.NORMAL)
     public void onMotionAim(EventMotion event) {
         RotationManager rm = RotationManager.getInstance();
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayerSP player = mc.thePlayer;
-        if (!event.isPre() || !polar() || player == null || mc.theWorld == null || !rm.owns(this)
+        WorldClient world = mc.theWorld;
+        if (!event.isPre() || !polar() || player == null || world == null || !rm.owns(this)
                 || mc.currentScreen != null) {
             return;
         }
         float move = PlayerUtil.movementYaw(mc, player);
-        rm.reaim(this, polarYaw(move, polarSide), POLAR_PITCH, TURN_RATE);
-        pending = findPolarPlacement(mc, player, mc.theWorld, rm.getServerLookVec());
-        if (pending == null && straightWalk(move)) {
-            // Try the other prescribed offset on the same mouse grid before changing sides.
-            float otherYaw = rm.getServerYaw() + RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(
-                    polarYaw(move, -polarSide) - rm.getServerYaw()));
-            if (findPolarPlacement(mc, player, mc.theWorld, RotationManager.lookVec(otherYaw, rm.getServerPitch())) != null) {
-                polarSide = -polarSide;
-                rm.reaim(this, polarYaw(move, polarSide), POLAR_PITCH, TURN_RATE);
-                pending = findPolarPlacement(mc, player, mc.theWorld, rm.getServerLookVec());
-            }
+        polarStraight = straightWalk(move, polarStraight);
+        if (polarStraight) {
+            // The row the player stands on, not the cell under its middle, which drifts off the bridge first.
+            BlockPos row = standingOn(world, player);
+            polarSide = polarSide(player.posX - row.getX() - 0.5D, player.posZ - row.getZ() - 0.5D, move, polarSide);
         }
+        float yaw = polarYaw(move, polarStraight, polarSide);
+        // Like Hypixel, an exact diagonal only grazes block corners, so it sits one mouse step off.
+        if (!polarStraight
+                && 180.0F - Math.abs(MathHelper.wrapAngleTo180_float(4.0F * yaw)) < 2.0F * RotationManager.gcdStep()) {
+            yaw += RotationManager.gcdStep();
+        }
+        // Land the yaw first, so the scan runs on the mouse grid of the look this packet carries.
+        rm.reaim(this, yaw, heldPitch, TURN_RATE);
+        float aimYaw = rm.getServerYaw();
+        Vec3 eyes = player.getPositionEyes(1.0F);
+        wanted = new ArrayList<>(candidateCells(mc, player, world));
+        float pitch = scanPitch(rm.getServerPitch(), POLAR_SCAN_STEP,
+                candidate -> polarClick(world, eyes, aimYaw, candidate));
+        rm.reaim(this, yaw, pitch, TURN_RATE);
+        pending = polarClick(world, eyes, rm.getServerYaw(), rm.getServerPitch());
     }
 
     @EventTarget
@@ -443,19 +516,13 @@ public class Scaffold extends Module {
     }
 
     private boolean firePending(Minecraft mc, EntityPlayerSP player, WorldClient world, ItemStack held) {
-        Placement p = pending;
-        if (!RotationManager.getInstance().owns(this)) {
+        RotationManager rm = RotationManager.getInstance();
+        if (!rm.owns(this)) {
             return false;
         }
-        // Judged against the look already sent, since the place goes out before this tick's look packet.
-        // Its fixed pitch can hit the top of the support while we click the bridge face.
-        MovingObjectPosition mop = RayTraceUtil.traceToLook(world, player.getPositionEyes(1.0F),
-                RotationManager.getInstance().getSentLookVec(), PlacementUtil.SERVER_REACH, false, false, true);
-        if (!RayTraceUtil.isBlockHit(mop) || !touchesRay(world, p.support, mop)
-                || !PlacementUtil.sideClickLegal(p.face, p.support, player.getPositionEyes(1.0F))) {
-            return false;
-        }
-        if (!ActionGuard.getInstance().tryReserveAfterCleanTick(this)) {
+        // The place goes out before this tick's look packet, so it is the click the sent look makes.
+        Placement p = polarClick(world, player.getPositionEyes(1.0F), rm.getSentYaw(), rm.getSentPitch());
+        if (p == null || !ActionGuard.getInstance().tryReserveAfterCleanTick(this)) {
             return false;
         }
         PacketLog.getInstance().tagged("Scaffold", () -> {
@@ -478,65 +545,6 @@ public class Scaffold extends Module {
         }
     }
 
-
-    /** Polar raytraces the support after mouse-grid rounding, then chooses a face toward a bridge cell. */
-    private Placement findPolarPlacement(Minecraft mc, EntityPlayerSP player, WorldClient world, Vec3 look) {
-        Vec3 eyes = player.getPositionEyes(1.0F);
-        MovingObjectPosition hit = RayTraceUtil.traceToLook(world, eyes, look,
-                PlacementUtil.SERVER_REACH, false, false, true);
-        if (!RayTraceUtil.isBlockHit(hit)) {
-            return null;
-        }
-        Placement best = null;
-        double bestDistance = Double.POSITIVE_INFINITY;
-        Iterable<BlockPos> cells = candidateCells(mc, player, world);
-        Vec3 travel = travel(player);
-        double toPlane = (eyes.yCoord - planeY - 1.0D) / -look.yCoord;
-        Vec3 projected = new Vec3(eyes.xCoord + look.xCoord * toPlane, planeY + 0.5D,
-                eyes.zCoord + look.zCoord * toPlane);
-        Vec3 ahead = travel == null ? null : projected.addVector(
-                travel.xCoord * PlacementUtil.SERVER_REACH, 0, travel.zCoord * PlacementUtil.SERVER_REACH);
-        for (BlockPos target : cells) {
-            if (!world.getBlockState(target).getBlock().isReplaceable(world, target)) {
-                continue;
-            }
-            for (EnumFacing dir : PlacementUtil.SUPPORT_ORDER) {
-                BlockPos support = target.offset(dir);
-                EnumFacing face = dir.getOpposite();
-                if (world.getBlockState(support).getBlock().getMaterial().isSolid()
-                        && touchesRay(world, support, hit) && PlacementUtil.sideClickLegal(face, support, eyes)
-                        && world.checkNoEntityCollision(new AxisAlignedBB(target, target.add(1, 1, 1)))) {
-                    // Pick the stepping stone the fixed ray will cross as the player advances.
-                    double dx = target.getX() + 0.5D - player.posX;
-                    double dz = target.getZ() + 0.5D - player.posZ;
-                    double distance = dx * dx + dz * dz;
-                    if (ahead != null) {
-                        AxisAlignedBB box = new AxisAlignedBB(target, target.add(1, 1, 1));
-                        MovingObjectPosition crossing = box.calculateIntercept(projected, ahead);
-                        if (!box.isVecInside(projected) && crossing == null) {
-                            continue;
-                        }
-                        distance = box.isVecInside(projected) ? 0.0D : projected.squareDistanceTo(crossing.hitVec);
-                    }
-                    if (distance < bestDistance) {
-                        bestDistance = distance;
-                        best = new Placement(target, support, face, lockedHitVec(support, face, eyes, look));
-                    }
-                }
-            }
-        }
-        return best;
-    }
-
-    /** At an exact shared edge, Minecraft's voxel walk can return either of the touching blocks. */
-    private static boolean touchesRay(WorldClient world, BlockPos support, MovingObjectPosition first) {
-        if (RayTraceUtil.matchesBlock(first, support)) {
-            return true;
-        }
-        AxisAlignedBB box = world.getBlockState(support).getBlock().getCollisionBoundingBox(
-                world, support, world.getBlockState(support));
-        return box != null && box.expand(1.0E-7D, 1.0E-7D, 1.0E-7D).isVecInside(first.hitVec);
-    }
 
     /** Telly's first cell whose face a look along {@code yaw} can reach. */
     private Placement findPlacement(Minecraft mc, EntityPlayerSP player, WorldClient world, float yaw) {
