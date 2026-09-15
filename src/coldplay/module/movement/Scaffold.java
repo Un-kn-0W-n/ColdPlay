@@ -45,9 +45,9 @@ import java.util.Random;
 import java.util.Set;
 
 /**
- * Hypixel and Polar walk-bridge behind a spoofed backward look, Telly sprint-jump bridges. Hypixel clicks
- * what its look raytraces onto, the way vanilla does. Polar and Telly pick a cell after physics and verify
- * it against the sent look before placing.
+ * Hypixel and Polar walk-bridge behind a spoofed backward look, Telly sprint-jump bridges. Hypixel and Telly
+ * click what this tick's look raytraces onto, the way vanilla does. Polar picks a cell after physics and
+ * verifies it against the sent look before placing.
  */
 public class Scaffold extends Module {
 
@@ -62,8 +62,8 @@ public class Scaffold extends Module {
                     + "yaw - 180 (- 45 or + 45 on a straight walk, flat on a diagonal) and a locked 75.8 "
                     + "pitch until you disable it. Telly: sprint-jump "
                     + "bridge, auto-jumps facing forward, turns back 120, 159 and 180 degrees over the first "
-                    + "three airborne ticks and places from the third on, never next to a turn over 38 degrees, "
-                    + "only when the sent look raytraces onto the support."));
+                    + "three airborne ticks and places from the third on, only on a tick that turns 38 degrees "
+                    + "or less and whose look raytraces onto the support."));
 
     private final HeaderSetting placementHeader = add(new HeaderSetting("Placement"));
     private final BooleanSetting autoSwitch = add(new BooleanSetting("AutoSwitch", true)
@@ -96,7 +96,7 @@ public class Scaffold extends Module {
 
     private static final int BACKFILL = 3; // Telly: cells covered behind the player each tick
     private static final int TELLY_PLACE_TICK = 3; // first airborne tick allowed to click
-    private static final float MAX_PLACE_TURN = 38.0F; // yaw plus pitch degrees, the server flags a click past 40
+    private static final float MAX_PLACE_TURN = 38.0F; // yaw plus pitch degrees on a placing tick, the server flags past 40
 
     private static final float POLAR_PITCH = 75.8F;
     private static final float POLAR_STRAIGHT_OFFSET = 45.0F; // degrees off the hold on a straight walk
@@ -105,7 +105,7 @@ public class Scaffold extends Module {
 
     private final Random rand = new Random();
     private Placement pending;
-    private List<BlockPos> wanted = new ArrayList<>(); // Hypixel: this tick's cells, best first
+    private List<BlockPos> wanted = new ArrayList<>(); // Hypixel and Telly: this tick's cells, best first
     private int planeY = Integer.MIN_VALUE; // MIN_VALUE until seeded
     private BlockPos ground; // cell last stood on
     private boolean rising; // jump key seen since leaving the ground
@@ -113,8 +113,6 @@ public class Scaffold extends Module {
     private long insetSalt;
 
     private int offGroundTicks; // counted at EventUpdate PRE, before onAim reads it
-    private float lastTurn; // turn of the sent look this tick's click is judged against
-    private float prevSentYaw, prevSentPitch;
     private float polarSide; // Polar: -1 or +1, the way a straight walk offsets
 
     public Scaffold() {
@@ -133,7 +131,6 @@ public class Scaffold extends Module {
         ground = null;
         rising = false;
         offGroundTicks = 0;
-        prevSentYaw = prevSentPitch = Float.NaN;
     }
 
     @Override
@@ -188,7 +185,13 @@ public class Scaffold extends Module {
         return Math.abs(MathHelper.wrapAngleTo180_float(toYaw - fromYaw)) + Math.abs(toPitch - fromPitch);
     }
 
-    /** The yaw request. Hypixel also aims its pitch here; Polar's is locked and Telly's is aimed in onMotionAim. */
+    /** Whole mouse steps just under {@code degrees}, so a snapped turn cannot round past it. */
+    private static float floorToGcd(float degrees) {
+        float gcd = RotationManager.gcdStep();
+        return Math.max(0.0F, (float) Math.floor((degrees - 0.001F) / gcd) * gcd);
+    }
+
+    /** The look request. Polar's pitch is locked; Hypixel and Telly aim theirs here. */
     @EventTarget(priority = EventPriority.AIM)
     public void onAim(EventUpdate event) {
         Minecraft mc = Minecraft.getMinecraft();
@@ -211,15 +214,34 @@ public class Scaffold extends Module {
         } else if (polar()) {
             rm.request(this, polarYaw(move, polarSide), POLAR_PITCH, PRIORITY, TURN_RATE);
         } else {
-            float target = tellyYaw(player.rotationYaw, player.onGround, offGroundTicks);
-            if (offGroundTicks >= TELLY_PLACE_TICK) {
-                // Every held tick stays placeable. Yaw goes first, onMotionAim gives the pitch what is left.
-                float sent = rm.getSentYaw();
-                target = sent + MathHelper.clamp_float(MathHelper.wrapAngleTo180_float(target - sent),
-                        -MAX_PLACE_TURN, MAX_PLACE_TURN);
-            }
-            rm.request(this, target, pitch, PRIORITY, TURN_RATE);
+            aimTelly(mc, player, rm, yaw, pitch);
         }
+    }
+
+    /**
+     * Turns to the telly yaw and aims the pitch at the first reachable cell, from the position the server
+     * still holds. A placing tick turns at most MAX_PLACE_TURN, yaw first.
+     */
+    private void aimTelly(Minecraft mc, EntityPlayerSP player, RotationManager rm, float yaw, float pitch) {
+        boolean placing = offGroundTicks >= TELLY_PLACE_TICK;
+        float yawStep = RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(
+                tellyYaw(player.rotationYaw, player.onGround, offGroundTicks) - yaw));
+        if (placing) {
+            float cap = floorToGcd(MAX_PLACE_TURN);
+            yawStep = MathHelper.clamp_float(yawStep, -cap, cap);
+        }
+        // Mid-spin, aim along the finished turn so the first placing tick only corrects a little.
+        float aimYaw = offGroundTicks > 0 && !placing
+                ? tellyYaw(player.rotationYaw, false, TELLY_PLACE_TICK) : yaw + yawStep;
+        wanted = new ArrayList<>(candidateCells(mc, player, mc.theWorld));
+        pending = findPlacement(mc, player, mc.theWorld, aimYaw);
+        float aimed = pending == null ? Float.NaN : aimPitch(player.getPositionEyes(1.0F), pending, aimYaw);
+        float pitchStep = Float.isNaN(aimed) ? 0.0F : RotationManager.gcdSnap(aimed - pitch);
+        if (placing) {
+            float budget = floorToGcd(MAX_PLACE_TURN - Math.abs(yawStep));
+            pitchStep = MathHelper.clamp_float(pitchStep, -budget, budget);
+        }
+        rm.request(this, yaw + yawStep, pitch + pitchStep, PRIORITY, TURN_RATE);
     }
 
     /**
@@ -277,8 +299,9 @@ public class Scaffold extends Module {
     }
 
     /**
-     * Hypixel clicks once this tick's look is final, from the position the server still holds. Vanilla
-     * traces its click the same way, before the movement packet that carries the look.
+     * Hypixel and Telly click once this tick's look is final, from the position the server still holds.
+     * Vanilla traces its click the same way, before the movement packet that carries the look, and the
+     * server checks the click against that look.
      */
     @EventTarget(priority = EventPriority.DRAIN - 1)
     public void onPlace(EventUpdate event) {
@@ -286,8 +309,12 @@ public class Scaffold extends Module {
         EntityPlayerSP player = mc.thePlayer;
         WorldClient world = mc.theWorld;
         RotationManager rm = RotationManager.getInstance();
-        if (!event.isPre() || !hypixel() || player == null || world == null || mc.currentScreen != null
+        if (!event.isPre() || polar() || player == null || world == null || mc.currentScreen != null
                 || !rm.owns(this)) {
+            return;
+        }
+        if (telly() && (offGroundTicks < TELLY_PLACE_TICK || turn(rm.getSentYaw(), rm.getSentPitch(),
+                rm.getServerYaw(), rm.getServerPitch()) > MAX_PLACE_TURN)) {
             return;
         }
         ItemStack held = player.getHeldItem();
@@ -303,45 +330,29 @@ public class Scaffold extends Module {
         });
     }
 
-    /** Polar and Telly select and aim from the position this tick's packet carries, after movement. */
+    /** Polar selects and aims from the position this tick's packet carries, after movement. */
     @EventTarget(priority = EventPriority.NORMAL)
     public void onMotionAim(EventMotion event) {
         RotationManager rm = RotationManager.getInstance();
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayerSP player = mc.thePlayer;
-        if (!event.isPre() || hypixel() || player == null || mc.theWorld == null || !rm.owns(this)
+        if (!event.isPre() || !polar() || player == null || mc.theWorld == null || !rm.owns(this)
                 || mc.currentScreen != null) {
             return;
         }
-        Vec3 eyes = player.getPositionEyes(1.0F);
-        if (polar()) {
-            float move = PlayerUtil.movementYaw(mc, player);
-            rm.reaim(this, polarYaw(move, polarSide), POLAR_PITCH, TURN_RATE);
-            pending = findPolarPlacement(mc, player, mc.theWorld, rm.getServerLookVec());
-            if (pending == null && straightWalk(move)) {
-                // Try the other prescribed offset on the same mouse grid before changing sides.
-                float otherYaw = rm.getServerYaw() + RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(
-                        polarYaw(move, -polarSide) - rm.getServerYaw()));
-                if (findPolarPlacement(mc, player, mc.theWorld, RotationManager.lookVec(otherYaw, rm.getServerPitch())) != null) {
-                    polarSide = -polarSide;
-                    rm.reaim(this, polarYaw(move, polarSide), POLAR_PITCH, TURN_RATE);
-                    pending = findPolarPlacement(mc, player, mc.theWorld, rm.getServerLookVec());
-                }
+        float move = PlayerUtil.movementYaw(mc, player);
+        rm.reaim(this, polarYaw(move, polarSide), POLAR_PITCH, TURN_RATE);
+        pending = findPolarPlacement(mc, player, mc.theWorld, rm.getServerLookVec());
+        if (pending == null && straightWalk(move)) {
+            // Try the other prescribed offset on the same mouse grid before changing sides.
+            float otherYaw = rm.getServerYaw() + RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(
+                    polarYaw(move, -polarSide) - rm.getServerYaw()));
+            if (findPolarPlacement(mc, player, mc.theWorld, RotationManager.lookVec(otherYaw, rm.getServerPitch())) != null) {
+                polarSide = -polarSide;
+                rm.reaim(this, polarYaw(move, polarSide), POLAR_PITCH, TURN_RATE);
+                pending = findPolarPlacement(mc, player, mc.theWorld, rm.getServerLookVec());
             }
-            return;
         }
-        float yaw = rm.getServerYaw();
-        pending = findPlacement(mc, player, mc.theWorld, yaw);
-        float pitch = pending == null ? Float.NaN : aimPitch(eyes, pending, yaw);
-        if (Float.isNaN(pitch)) {
-            // Still spinning, keep the pitch.
-            pitch = rm.getServerPitch();
-        } else if (offGroundTicks >= TELLY_PLACE_TICK) {
-            float budget = Math.max(0.0F,
-                    MAX_PLACE_TURN - Math.abs(MathHelper.wrapAngleTo180_float(yaw - rm.getSentYaw())));
-            pitch = rm.getSentPitch() + MathHelper.clamp_float(pitch - rm.getSentPitch(), -budget, budget);
-        }
-        rm.reaim(this, yaw, pitch, TURN_RATE);
     }
 
     @EventTarget
@@ -405,10 +416,6 @@ public class Scaffold extends Module {
             }
             return;
         }
-        RotationManager rm = RotationManager.getInstance();
-        lastTurn = turn(prevSentYaw, prevSentPitch, rm.getSentYaw(), rm.getSentPitch());
-        prevSentYaw = rm.getSentYaw();
-        prevSentPitch = rm.getSentPitch();
         if (player.onGround) {
             offGroundTicks = 0;
             ground = new BlockPos(player).down();
@@ -430,43 +437,33 @@ public class Scaffold extends Module {
             return;
         }
         // The previous motion packet aimed at this cell from the current position.
-        if (!hypixel() && pending != null && firePending(mc, player, world, held)) {
+        if (polar() && pending != null && firePending(mc, player, world, held)) {
             pending = null;
         }
     }
 
     private boolean firePending(Minecraft mc, EntityPlayerSP player, WorldClient world, ItemStack held) {
         Placement p = pending;
-        // NaN before the first two looks, which also fails the turn check.
-        if (!RotationManager.getInstance().owns(this)
-                || telly() && (offGroundTicks < TELLY_PLACE_TICK || !(lastTurn <= MAX_PLACE_TURN))) {
+        if (!RotationManager.getInstance().owns(this)) {
             return false;
         }
         // Judged against the look already sent, since the place goes out before this tick's look packet.
+        // Its fixed pitch can hit the top of the support while we click the bridge face.
         MovingObjectPosition mop = RayTraceUtil.traceToLook(world, player.getPositionEyes(1.0F),
                 RotationManager.getInstance().getSentLookVec(), PlacementUtil.SERVER_REACH, false, false, true);
-        if (!RayTraceUtil.isBlockHit(mop) || !(RayTraceUtil.matchesBlock(mop, p.support)
-                || polar() && touchesRay(world, p.support, mop))) {
-            return false;
-        }
-        // Polar verifies the support block; its fixed pitch can hit the top while we click the bridge face.
-        // Telly uses the actual hit face, including ties at diagonal corners.
-        EnumFacing face = polar() ? p.face : mop.sideHit;
-        Vec3 hit = polar() ? p.hitVec : mop.hitVec;
-        BlockPos target = p.support.offset(face);
-        if (target.getY() != p.target.getY()
-                || !PlacementUtil.sideClickLegal(face, p.support, player.getPositionEyes(1.0F))) {
+        if (!RayTraceUtil.isBlockHit(mop) || !touchesRay(world, p.support, mop)
+                || !PlacementUtil.sideClickLegal(p.face, p.support, player.getPositionEyes(1.0F))) {
             return false;
         }
         if (!ActionGuard.getInstance().tryReserveAfterCleanTick(this)) {
             return false;
         }
         PacketLog.getInstance().tagged("Scaffold", () -> {
-            if (mc.playerController.onPlayerRightClick(player, world, held, p.support, face, hit)) {
+            if (mc.playerController.onPlayerRightClick(player, world, held, p.support, p.face, p.hitVec)) {
                 player.swingItem();
             }
         });
-        return !world.getBlockState(target).getBlock().isReplaceable(world, target);
+        return !world.getBlockState(p.target).getBlock().isReplaceable(world, p.target);
     }
 
     /** Switches before the held stack runs dry. */
