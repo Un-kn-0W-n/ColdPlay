@@ -22,7 +22,7 @@ import java.util.Random;
 public class Velocity extends Module {
     private static final String LEGIT = "Legit";
     private static final String HYPIXEL = "Hypixel";
-    private static final int MAX_HOLD_TICKS = 3;
+    private static final int MAX_HOLD_TICKS = 6; // 300ms
     private static Velocity instance;
     public final ModeSetting mode = add(new ModeSetting("Mode", LEGIT, LEGIT, HYPIXEL)
             .describe("Legit auto-jumps on knockback. Hypixel holds melee knockback until you land, then jump-resets."));
