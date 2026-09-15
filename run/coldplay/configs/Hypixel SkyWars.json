@@ -89,7 +89,6 @@
         "ReleaseTicks": 3.0,
         "HoldTicks": 5.0,
         "BlinkTicks": 3.0,
-        "Reblock": true,
         "Auto Off": false
       }
     },
@@ -231,13 +230,6 @@
       }
     },
     "InvMove": {
-      "enabled": false,
-      "keyBind": 0,
-      "settings": {
-        "Mode": "Hypixel"
-      }
-    },
-    "NoSlow": {
       "enabled": false,
       "keyBind": 0,
       "settings": {

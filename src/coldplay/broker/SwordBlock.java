@@ -51,11 +51,6 @@ public final class SwordBlock {
         this.blinkTicks = blinkTicks;
     }
 
-    /** True once nothing is held and no burst block is left on the server. */
-    public boolean isIdle() {
-        return !armed && !serverBlocking && held.isEmpty();
-    }
-
     /** Disarms. A hold that never burst is sent now, since only a burst releases it; otherwise the next burst does. */
     public void disarm() {
         armed = false;
