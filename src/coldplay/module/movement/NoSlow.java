@@ -2,6 +2,7 @@ package coldplay.module.movement;
 
 import coldplay.broker.SlotBounce;
 import coldplay.broker.SwordBlock;
+import coldplay.broker.UseHold;
 import coldplay.event.EventMotion;
 import coldplay.event.EventTarget;
 import coldplay.module.Category;
@@ -29,7 +30,9 @@ public class NoSlow extends Module {
     public static boolean skipSlowdown(EntityPlayerSP player) {
         NoSlow m = instance;
         // the Blink burst's slowed tick is the one the server really processes as blocking
-        if (m == null || !m.isEnabled() || !player.isUsingItem() || SwordBlock.getInstance().slowedThisTick()) {
+        // an AutoBlock block stays slowed, and the bounce would end it on Hypixel
+        if (m == null || !m.isEnabled() || !player.isUsingItem() || SwordBlock.getInstance().slowedThisTick()
+                || UseHold.getInstance().isHeld()) {
             return false;
         }
         if (!HYPIXEL.equals(m.mode.get())) {
@@ -56,6 +59,6 @@ public class NoSlow extends Module {
         }
         bouncePlayer = null;
         // must reach the server before this tick's C03, which was moved without the slowdown
-        SlotBounce.getInstance().bounce("NoSlow", player.inventory.currentItem);
+        SlotBounce.getInstance().bounce("NoSlow");
     }
 }

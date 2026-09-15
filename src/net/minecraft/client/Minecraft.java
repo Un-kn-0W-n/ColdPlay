@@ -1328,7 +1328,8 @@ public class Minecraft implements IThreadListener, IPlayerUsage {
             if (this.currentScreen == null && this.gameSettings.keyBindCommand.isPressed() && flag)
                 this.displayGuiScreen(new GuiChat("/"));
             if (this.thePlayer.isUsingItem()) {
-                if (!this.gameSettings.keyBindUseItem.isKeyDown())
+                // ColdPlay >>> UseHold keeps an AutoBlock block up
+                if (!this.gameSettings.keyBindUseItem.isKeyDown() && !coldplay.broker.UseHold.getInstance().keeps(this.thePlayer))
                     this.playerController.onStoppedUsingItem(this.thePlayer);
                 while (true) if (!this.gameSettings.keyBindAttack.isPressed()) break;
                 while (true) if (!this.gameSettings.keyBindUseItem.isPressed()) break;

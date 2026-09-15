@@ -52,7 +52,7 @@ public class ModuleManager {
         coldplay.module.combat.KillAura killAura = new coldplay.module.combat.KillAura();
         register(killAura);
         eventHandler.register(killAura.graph(hudState)); // stays placeable in the HUD editor while KillAura is off
-        register(new coldplay.module.combat.AutoBlock());
+        register(new coldplay.module.combat.AutoBlock(killAura::getTarget, killAura::canReachTarget));
         register(new coldplay.module.combat.Breaker(killAura::isWorking));
         register(new coldplay.module.combat.WTap());
         register(new coldplay.module.combat.AutoThrow());
@@ -67,6 +67,7 @@ public class ModuleManager {
         register(new coldplay.module.movement.NoFall());
         register(new coldplay.module.movement.AutoPearl());
         register(new coldplay.module.movement.InvMove());
+        register(new coldplay.module.movement.NoSlow());
         register(new coldplay.module.movement.Velocity());
         register(new coldplay.module.visual.BlockAnimation());
         register(new coldplay.module.visual.HudModule(this::getModuleViews, hudState,

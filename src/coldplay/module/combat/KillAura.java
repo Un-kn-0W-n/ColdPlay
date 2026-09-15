@@ -18,6 +18,7 @@ import coldplay.broker.GameStateTracker;
 import coldplay.broker.PacketLog;
 import coldplay.broker.PlayerPacketState;
 import coldplay.broker.SlotGuard;
+import coldplay.broker.UseHold;
 import coldplay.broker.CombatManager;
 import coldplay.util.CpsDelay;
 import coldplay.util.RenderUtil;
@@ -166,6 +167,18 @@ public class KillAura extends Module {
         return target != null;
     }
 
+    public Entity getTarget() {
+        return target;
+    }
+
+    /** Whether the look we last sent puts the target within attack range. */
+    public boolean canReachTarget() {
+        EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+        Entity victim = target;
+        return player != null && victim != null
+                && rayHitsTarget(player, victim, player.sendQueue.getNetworkManager().getPlayerPackets().getPose());
+    }
+
     @EventTarget(priority = EventPriority.NORMAL + 2)
     public void onUpdate(EventUpdate event) {
         if (!event.isPre()) {
@@ -213,7 +226,8 @@ public class KillAura extends Module {
         // PRE keeps the click before this tick's movement packet.
         if (RotationManager.getInstance().owns(this) && now >= nextClickAt
                 && !SlotGuard.getInstance().isBusyAbove(ResourcePriority.NORMAL)
-                && !player.isUsingItem() && rayHitsTarget(player, target, pose)
+                && !player.isUsingItem() && UseHold.getInstance().allowsAttack(target)
+                && rayHitsTarget(player, target, pose)
                 && ActionGuard.getInstance().tryReserve(this)) {
             // Vanilla sends the swing before the attack.
             Entity victim = target;

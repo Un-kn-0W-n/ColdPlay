@@ -33,7 +33,7 @@
       "settings": {}
     },
     "KillAura": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 19,
       "settings": {
         "Players": true,
@@ -76,6 +76,7 @@
         "Range": 3.2,
         "Raytrace": "Linear",
         "Render": false,
+        "Graph Scale": 1.0,
         "Auto Off": true
       }
     },
@@ -88,6 +89,7 @@
         "ReleaseTicks": 3.0,
         "HoldTicks": 5.0,
         "BlinkTicks": 3.0,
+        "Reblock": true,
         "Auto Off": false
       }
     },
@@ -105,7 +107,7 @@
       }
     },
     "WTap": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Chance": 75.0,
@@ -114,7 +116,7 @@
       }
     },
     "AutoThrow": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 0,
       "settings": {
         "Range": 4.5,
@@ -174,11 +176,11 @@
       }
     },
     "BackTrack": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Delay": [
-          0.0,
+          25.0,
           50.0
         ],
         "Combat Timeout": 3.0,
@@ -235,10 +237,18 @@
         "Mode": "Hypixel"
       }
     },
+    "NoSlow": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Mode": "Hypixel"
+      }
+    },
     "Velocity": {
       "enabled": true,
       "keyBind": 0,
       "settings": {
+        "Mode": "Hypixel",
         "Chance": 75.0
       }
     },
@@ -253,7 +263,9 @@
       "settings": {
         "ArrayList": true,
         "Suffixes": true,
+        "ArrayList Scale": 1.0,
         "Watermark": true,
+        "Watermark Scale": 1.0,
         "Animations": true
       }
     },
@@ -334,7 +346,9 @@
     "ArmorStatus": {
       "enabled": true,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Scale": 1.0
+      }
     },
     "Mirror": {
       "enabled": false,
@@ -560,7 +574,9 @@
     "HumanRecorder": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Scale": 1.0
+      }
     },
     "PacketLogger": {
       "enabled": false,

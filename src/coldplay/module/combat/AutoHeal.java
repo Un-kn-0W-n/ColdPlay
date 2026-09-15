@@ -91,7 +91,8 @@ public class AutoHeal extends Module {
             tickPotion(mc, player);
             return;
         }
-        if (mc.currentScreen != null || player.isUsingItem()
+        // an AutoBlock hold gives way once the heal claims the slot
+        if (mc.currentScreen != null || player.isUsingItem() && !coldplay.broker.UseHold.getInstance().isHeld()
                 || player.getHealth() > rolledThreshold
                 || System.currentTimeMillis() < nextHealAt) {
             return;
