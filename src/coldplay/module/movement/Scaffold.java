@@ -45,11 +45,6 @@ import java.util.Random;
 import java.util.Set;
 import java.util.function.Function;
 
-/**
- * Hypixel and Polar walk-bridge behind a spoofed backward look, Telly sprint-jump bridges. Hypixel and Telly
- * click what this tick's look raytraces onto, the way vanilla does. Polar traces its pitch after physics and
- * clicks what the sent look raytraces onto on the next tick.
- */
 public class Scaffold extends Module {
 
     private static final String HYPIXEL = "Hypixel";
@@ -166,25 +161,18 @@ public class Scaffold extends Module {
         return MathHelper.wrapAngleTo180_float(backward(move) + offset);
     }
 
-    /** Travel within a few degrees of a world axis, with some slack so a wobbling mouse cannot toggle the offset. */
     static boolean straightWalk(float moveYaw, boolean straight) {
         float axisYaw = EnumFacing.fromAngle(moveYaw).getHorizontalIndex() * 90.0F;
         float off = Math.abs(MathHelper.wrapAngleTo180_float(moveYaw - axisYaw));
         return off <= (straight ? POLAR_LEAVE_AXIS : POLAR_ENTER_AXIS);
     }
 
-    /**
-     * The offset whose ray slants back toward the middle of the bridge row, from the player's offset off the
-     * middle of the block it stands on. The ray on the far side of the middle misses the support for part of
-     * each stride.
-     */
     static float polarSide(double offsetX, double offsetZ, float moveYaw, float side) {
         double axis = Math.toRadians(EnumFacing.fromAngle(moveYaw).getHorizontalIndex() * 90.0D);
         double right = -offsetX * Math.cos(axis) - offsetZ * Math.sin(axis);
         return Math.abs(right) > POLAR_SIDE_BAND ? Math.signum((float) right) : side;
     }
 
-    /** The solid block under the feet nearest the player's middle, else the cell under its middle. */
     private static BlockPos standingOn(WorldClient world, EntityPlayerSP player) {
         AxisAlignedBB box = player.getEntityBoundingBox();
         int y = MathHelper.floor_double(box.minY) - 1;
@@ -204,7 +192,6 @@ public class Scaffold extends Module {
         return best;
     }
 
-    /** The camera on the ground, then 120, 159 and 180 degrees back over the first airborne ticks. */
     static float tellyYaw(float cameraYaw, boolean onGround, int offGroundTicks) {
         if (onGround) {
             return cameraYaw;
@@ -218,18 +205,15 @@ public class Scaffold extends Module {
         return cameraYaw - 180.0F;
     }
 
-    /** Yaw plus pitch change between two looks. */
     static float turn(float fromYaw, float fromPitch, float toYaw, float toPitch) {
         return Math.abs(MathHelper.wrapAngleTo180_float(toYaw - fromYaw)) + Math.abs(toPitch - fromPitch);
     }
 
-    /** Whole mouse steps just under {@code degrees}, so a snapped turn cannot round past it. */
     private static float floorToGcd(float degrees) {
         float gcd = RotationManager.gcdStep();
         return Math.max(0.0F, (float) Math.floor((degrees - 0.001F) / gcd) * gcd);
     }
 
-    /** The look request. Hypixel and Telly aim here; Polar re-aims after physics in onMotionAim. */
     @EventTarget(priority = EventPriority.AIM)
     public void onAim(EventUpdate event) {
         Minecraft mc = Minecraft.getMinecraft();
@@ -242,8 +226,6 @@ public class Scaffold extends Module {
         float pitch = rm.isActive() ? rm.getServerPitch() : player.rotationPitch;
         float move = PlayerUtil.movementYaw(mc, player);
         if (hypixel()) {
-            // On the mouse grid, so the look that goes out is exactly the one traced. An exact diagonal runs
-            // through block corners where no stepping stone can be hit, so it sits one mouse step off.
             yaw += RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(backward(move) - yaw));
             if (180.0F - Math.abs(MathHelper.wrapAngleTo180_float(4.0F * yaw)) < 2.0F * RotationManager.gcdStep()) {
                 yaw += RotationManager.gcdStep();
@@ -256,10 +238,6 @@ public class Scaffold extends Module {
         }
     }
 
-    /**
-     * Turns to the telly yaw and aims the pitch at the first reachable cell, from the position the server
-     * still holds. A placing tick turns at most MAX_PLACE_TURN, yaw first.
-     */
     private void aimTelly(Minecraft mc, EntityPlayerSP player, RotationManager rm, float yaw, float pitch) {
         boolean placing = offGroundTicks >= TELLY_PLACE_TICK;
         float yawStep = RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(
@@ -289,10 +267,6 @@ public class Scaffold extends Module {
         return scanPitch(current, SCAN_STEP, pitch -> clickAlong(world, eyes, RotationManager.lookVec(yaw, pitch)));
     }
 
-    /**
-     * Pitch whose click fills the best wanted cell. Keeps the current pitch while it still does, otherwise
-     * takes the middle of the pitches that do.
-     */
     private float scanPitch(float current, float spacing, Function<Float, Placement> click) {
         float gcd = RotationManager.gcdStep();
         float step = gcd * Math.max(1, Math.round(spacing / gcd));
@@ -324,7 +298,6 @@ public class Scaffold extends Module {
         return heldPitch;
     }
 
-    /** What a click along {@code look} would place, or null unless it fills one of this tick's cells. */
     private Placement clickAlong(WorldClient world, Vec3 eyes, Vec3 look) {
         MovingObjectPosition hit = RayTraceUtil.traceToLook(world, eyes, look,
                 PlacementUtil.SERVER_REACH, false, false, true);
@@ -340,10 +313,6 @@ public class Scaffold extends Module {
         return new Placement(target, hit.getBlockPos(), hit.sideHit, hit.hitVec);
     }
 
-    /**
-     * Polar's click along a look. The table trig here and the server's can put a grazing ray on different
-     * faces, so exact trig has to agree on the block and face.
-     */
     private Placement polarClick(WorldClient world, Vec3 eyes, float yaw, float pitch) {
         Placement p = clickAlong(world, eyes, RotationManager.lookVec(yaw, pitch));
         if (p == null) {
@@ -361,11 +330,6 @@ public class Scaffold extends Module {
                 Math.cos(yawRad) * Math.cos(pitchRad));
     }
 
-    /**
-     * Hypixel and Telly click once this tick's look is final, from the position the server still holds.
-     * Vanilla traces its click the same way, before the movement packet that carries the look, and the
-     * server checks the click against that look.
-     */
     @EventTarget(priority = EventPriority.DRAIN - 1)
     public void onPlace(EventUpdate event) {
         Minecraft mc = Minecraft.getMinecraft();
@@ -393,7 +357,6 @@ public class Scaffold extends Module {
         });
     }
 
-    /** Polar aims from the position this tick's packet carries, after movement. */
     @EventTarget(priority = EventPriority.NORMAL)
     public void onMotionAim(EventMotion event) {
         RotationManager rm = RotationManager.getInstance();
@@ -481,9 +444,6 @@ public class Scaffold extends Module {
             return;
         }
         if (!event.isPre()) {
-            // Pre runs before key input, post after it. A tapped jump is released before the feet clear
-            // the next block, so it holds until landing.
-            // keyBindJump, not movementInput.jump, which auto-jump and Velocity also write.
             if (mc.gameSettings.keyBindJump.isKeyDown()) {
                 rising = true;
             }
@@ -545,8 +505,6 @@ public class Scaffold extends Module {
         }
     }
 
-
-    /** Telly's first cell whose face a look along {@code yaw} can reach. */
     private Placement findPlacement(Minecraft mc, EntityPlayerSP player, WorldClient world, float yaw) {
         RotationManager rm = RotationManager.getInstance();
         Vec3 eyes = player.getPositionEyes(1.0F);
@@ -576,7 +534,6 @@ public class Scaffold extends Module {
         return null;
     }
 
-    /** Pitch onto the face along {@code yaw}, NaN when unreachable. Top faces aim straight at the hit point. */
     private static float aimPitch(Vec3 eyes, Placement p, float yaw) {
         if (p.face != EnumFacing.UP) {
             return PlacementUtil.facePitch(eyes, p, yaw);
@@ -585,7 +542,6 @@ public class Scaffold extends Module {
                 p.hitVec.xCoord, p.hitVec.yCoord, p.hitVec.zCoord);
     }
 
-    /** Ascend step, foot and its stepping stones, Telly backfill, then cells ahead along the travel. */
     private Set<BlockPos> candidateCells(Minecraft mc, EntityPlayerSP player, WorldClient world) {
         boolean ascend = !keepY.get() && rising;
         if (ascend || player.onGround || planeY == Integer.MIN_VALUE) {
@@ -616,7 +572,6 @@ public class Scaffold extends Module {
         return cells;
     }
 
-    /** Adds {@code steps} cells past {@code from} along {@code dir}, nearest first. A negative sign walks backward. */
     private void addAlong(WorldClient world, Set<BlockPos> cells, EntityPlayerSP player,
                           BlockPos from, Vec3 dir, double sign, int steps) {
         BlockPos prev = from;
@@ -629,13 +584,11 @@ public class Scaffold extends Module {
         return new BlockPos(player.posX + offsetX, planeY, player.posZ + offsetZ);
     }
 
-    /** Unit horizontal travel direction, or null when standing still. */
     private static Vec3 travel(EntityPlayerSP player) {
         Vec3 dir = new Vec3(player.motionX, 0.0D, player.motionZ).normalize();
         return dir.lengthVector() == 0.0D ? null : dir;
     }
 
-    /** Adds {@code next}, with corner cells first when the step from {@code prev} is diagonal. */
     private BlockPos addWithCorners(WorldClient world, Set<BlockPos> cells, BlockPos next, BlockPos prev) {
         if (next.getX() != prev.getX() && next.getZ() != prev.getZ()
                 && (needsCorner(world, next) || needsCorner(world, prev))) {
@@ -646,7 +599,6 @@ public class Scaffold extends Module {
         return next;
     }
 
-    /** Replaceable with no solid neighbour to place against. */
     private static boolean needsCorner(WorldClient world, BlockPos cell) {
         if (!world.getBlockState(cell).getBlock().isReplaceable(world, cell)) {
             return false;
@@ -659,7 +611,6 @@ public class Scaffold extends Module {
         return true;
     }
 
-    /** Where the look ray meets the face, clamped into the legal band. Random without a usable ray. */
     private Vec3 lockedHitVec(BlockPos support, EnumFacing face, Vec3 eyes, Vec3 dir) {
         if (dir == null) {
             return PlacementUtil.randomHitVec(rand, support, face);
@@ -684,7 +635,6 @@ public class Scaffold extends Module {
                 axis == EnumFacing.Axis.Z ? hit.zCoord : clampFace(hit.zCoord, support.getZ(), inset));
     }
 
-    /** Clamps into the face's legal band, narrowed by a per-face inset. */
     private static double clampFace(double v, int base, Random inset) {
         double in = inset.nextDouble() * CLAMP_JITTER;
         return MathHelper.clamp_double(v, base + PlacementUtil.HIT_BAND_MIN + in, base + PlacementUtil.HIT_BAND_MAX - in);
