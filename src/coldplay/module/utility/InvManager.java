@@ -50,6 +50,7 @@ public class InvManager extends Module {
     private final BooleanSetting autoClose = add(new BooleanSetting("Auto Close", false).describe("Close the inventory once jobs are done."));
 
     private static final int ARMOR = 0, HOTBAR = 1, CLEANER = 2;
+    private static final long MANUAL_HOLD_MS = 800L; // hands off this long after a click of your own
 
     private Container active;
     private int lastSlot = -1;
@@ -95,9 +96,16 @@ public class InvManager extends Module {
             worked = false;
             nextAt = System.currentTimeMillis() + InvUtil.reactionDelayMs();
         }
-        if (transactions.isRecovering() || player.inventory.getItemStack() != null
-                || ActionGuard.getInstance().playerActedLastTick() || InvUtil.isPlayerMoving(player)
-                || System.currentTimeMillis() < nextAt) {
+        if (transactions.isRecovering() || ActionGuard.getInstance().playerActedLastTick()
+                || InvUtil.isPlayerMoving(player)) {
+            return;
+        }
+        if (handsOn(player, container, transactions)) {
+            // stay out of the way, and still wait out a reaction once they stop
+            nextAt = Math.max(nextAt, System.currentTimeMillis() + InvUtil.reactionDelayMs());
+            return;
+        }
+        if (System.currentTimeMillis() < nextAt) {
             return;
         }
 
@@ -125,6 +133,20 @@ public class InvManager extends Module {
             nextAt = System.currentTimeMillis() + (instant ? ThreadLocalRandom.current().nextLong(50, 110)
                     : InvUtil.moveDelayMs(delay.getLo(), delay.getHi(), container, lastSlot, after == null ? -1 : after[0]));
         });
+    }
+
+    // The player is working the inventory themselves: something on the cursor, a click they just
+    // made, or a craft sitting in the 2x2 grid waiting to be picked up.
+    private static boolean handsOn(EntityPlayerSP player, Container c, InventoryTransactions transactions) {
+        if (player.inventory.getItemStack() != null || transactions.manualWithin(MANUAL_HOLD_MS)) {
+            return true;
+        }
+        for (int slot = 0; slot < 5; slot++) {
+            if (at(c, slot) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Replanned from live slots each tick; a refused click just falls through.

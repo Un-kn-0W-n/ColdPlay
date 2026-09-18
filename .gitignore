@@ -1,6 +1,7 @@
 # Build output
 /build/
 /out/
+/bin/
 
 # Keep runtime data local, except shared profiles. Git requires each parent to be re-included.
 /run/*

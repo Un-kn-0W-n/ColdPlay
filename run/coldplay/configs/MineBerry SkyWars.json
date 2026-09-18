@@ -51,31 +51,16 @@
           9.0,
           16.0
         ],
-        "Yaw Acceleration": [
-          30.0,
-          50.0
-        ],
-        "Pitch Acceleration": [
-          25.0,
-          45.0
-        ],
-        "Yaw Deceleration": [
-          2.0,
-          8.0
-        ],
-        "Pitch Deceleration": [
-          10.0,
-          20.0
-        ],
-        "Rotation Range": 5.0,
-        "FOV": 110.0,
+        "Rotation Range": 4.5,
+        "FOV": 92.0,
         "CPS": [
           6.0,
-          12.0
+          9.0
         ],
         "Range": 3.0,
-        "Raytrace": "Linear",
-        "Render": false,
+        "Raytrace": "Center",
+        "Render": true,
+        "Graph Scale": 1.0,
         "Auto Off": true
       }
     },
@@ -111,6 +96,13 @@
         "Chance": 75.0,
         "STap": false,
         "Distance": 3.0
+      }
+    },
+    "KeepSprint": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Chance": 100.0
       }
     },
     "AutoThrow": {
@@ -239,11 +231,12 @@
       "enabled": false,
       "keyBind": 0,
       "settings": {
+        "Mode": "Hypixel",
         "Chance": 75.0
       }
     },
     "BlockAnimation": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {}
     },
@@ -253,7 +246,9 @@
       "settings": {
         "ArrayList": true,
         "Suffixes": true,
+        "ArrayList Scale": 1.0,
         "Watermark": true,
+        "Watermark Scale": 1.0,
         "Animations": true
       }
     },
@@ -334,7 +329,9 @@
     "ArmorStatus": {
       "enabled": true,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Scale": 1.0
+      }
     },
     "Mirror": {
       "enabled": false,
@@ -469,9 +466,9 @@
           130.0
         ],
         "AutoArmor": true,
-        "ArmorInstant": true,
+        "ArmorInstant": false,
         "AutoHotBar": true,
-        "HotbarInstant": true,
+        "HotbarInstant": false,
         "Layout": {
           "slots": [
             [
@@ -560,7 +557,9 @@
     "HumanRecorder": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Scale": 1.0
+      }
     },
     "PacketLogger": {
       "enabled": false,

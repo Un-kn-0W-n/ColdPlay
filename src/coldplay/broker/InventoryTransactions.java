@@ -39,6 +39,7 @@ public final class InventoryTransactions {
     private boolean recovering;
     private long revision;
     private int idleSweeps;
+    private long manualAt;
     private final Map<Short, Operation> pending = new HashMap<Short, Operation>();
     private final Map<Integer, Operation> refused = new HashMap<Integer, Operation>();
 
@@ -84,6 +85,15 @@ public final class InventoryTransactions {
 
     public boolean hasPending() {
         return !pending.isEmpty();
+    }
+
+    /** A click the player made themselves. Survives reset() so a window swap cannot clear the hold. */
+    public void manual() {
+        manualAt = System.currentTimeMillis();
+    }
+
+    public boolean manualWithin(long ms) {
+        return manualAt != 0L && System.currentTimeMillis() - manualAt < ms;
     }
 
     /** Bumps whenever the set of clickable slots may have changed. */
