@@ -10,7 +10,7 @@
         "Invisible": false,
         "NPCs": false,
         "Range": 4.5,
-        "FOV": 66.0,
+        "FOV": 180.0,
         "Level": "Normal"
       }
     },
@@ -33,7 +33,7 @@
       "settings": {}
     },
     "KillAura": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 19,
       "settings": {
         "Players": true,
@@ -68,7 +68,7 @@
       "enabled": false,
       "keyBind": 0,
       "settings": {
-        "Mode": "Blink",
+        "Mode": "Vanilla",
         "BlockTicks": 5.0,
         "ReleaseTicks": 2.0,
         "HoldTicks": 5.0,
@@ -148,9 +148,9 @@
       "enabled": false,
       "keyBind": 22,
       "settings": {
-        "Button": "Right",
-        "Min CPS": 9.0,
-        "Max CPS": 12.0
+        "Button": "Left",
+        "Min CPS": 5.0,
+        "Max CPS": 9.0
       }
     },
     "AntiMiss": {
