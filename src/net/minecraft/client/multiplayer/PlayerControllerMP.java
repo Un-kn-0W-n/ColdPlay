@@ -573,9 +573,10 @@ public class PlayerControllerMP
      */
     public ItemStack windowClick(int windowId, int slotId, int mouseButtonClicked, int mode, EntityPlayer playerIn)
     {
-        // ColdPlay >>> InvMove Hypixel click gate
+        // ColdPlay >>> InvMove Hypixel click gate, manual click record
         if (playerIn.openContainer.windowId != windowId
                 || coldplay.module.movement.InvMove.deferClick(playerIn, windowId, slotId, mouseButtonClicked, mode)) return null;
+        coldplay.broker.InventoryTransactions.getInstance().manual();
         // ColdPlay <<<
         return windowClick(windowId, slotId, mouseButtonClicked, mode, playerIn, false);
     }
