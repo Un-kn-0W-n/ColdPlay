@@ -61,26 +61,17 @@ public class KillAura extends Module {
             .describe("Top yaw speed in degrees per tick. A pace within the range is chosen per target; slider changes apply immediately."));
     public final RangeSetting pitchSpeed = add(new RangeSetting("Pitch Speed", 18.0, 22.0, 1.0, 180.0, 0.5)
             .describe("Top pitch speed in degrees per tick, using the same relative pace as yaw. Slider changes apply immediately."));
-    public final RangeSetting yawAccel = add(new RangeSetting("Yaw Acceleration", 30.0, 50.0, 1.0, 100.0, 1.0).unit("%")
-            .describe("How much of the gap to the top yaw speed is closed each tick. 100% starts at full speed."));
-    public final RangeSetting pitchAccel = add(new RangeSetting("Pitch Acceleration", 30.0, 50.0, 1.0, 100.0, 1.0).unit("%")
-            .describe("How much of the gap to the top pitch speed is closed each tick. 100% starts at full speed."));
-    public final RangeSetting yawDecel = add(new RangeSetting("Yaw Deceleration", 20.0, 30.0, 0.0, 100.0, 1.0).unit("%")
-            .describe("How early the yaw slows in on approach. 0% never brakes."));
-    public final RangeSetting pitchDecel = add(new RangeSetting("Pitch Deceleration", 20.0, 30.0, 0.0, 100.0, 1.0).unit("%")
-            .describe("How early the pitch slows in on approach. 0% never brakes."));
     public final NumberSetting rotationRange = add(new NumberSetting("Rotation Range", 5.0, 1.0, 8.0, 0.1)
             .describe("Start aiming at targets within this distance (blocks); attacking still waits for Attack Range."));
     public final NumberSetting fov = add(new NumberSetting("FOV", 90.0, 10.0, 360.0, 1.0).describe("Only target within this view cone (degrees)."));
     private static final String CENTER = "Center";
-    private static final String LINEAR = "Linear";
     private static final String FIRST = "First";
     private final HeaderSetting combatHeader = add(new HeaderSetting("Combat"));
     public final RangeSetting cps = add(new RangeSetting("CPS", 8.0, 12.0, 1.0, 20.0, 1.0)
             .describe("Attack rate bounds (attacks per second); each attack delay is rolled between them."));
     public final NumberSetting range = add(new NumberSetting("Range", 4.0, 1.0, 6.0, 0.1).describe("Start attacking within this distance, in blocks."));
-    public final ModeSetting raytrace = add(new ModeSetting("Raytrace", CENTER, CENTER, LINEAR, FIRST)
-            .describe("Aim point on the target hitbox. Center: middle. Linear: a stable interior torso point per target. "
+    public final ModeSetting raytrace = add(new ModeSetting("Raytrace", CENTER, CENTER, FIRST)
+            .describe("Aim point on the target hitbox, before the drift wanders off it. Center: middle. "
                     + "First: point your look reaches first."));
     private final HeaderSetting debugHeader = add(new HeaderSetting("Debug"));
     public final BooleanSetting render = add(new BooleanSetting("Render", false)
@@ -93,13 +84,26 @@ public class KillAura extends Module {
     private long nextClickAt;
     private long lastSeenAt;
     private double aimPace;
-    private double yawRate, pitchRate;
-    private double aimX = .5, aimY = .6, aimZ = .5;
+    private double yawBase, pitchBase; // ramp state, before the wobble
+    private double yawRate, pitchRate; // what the broker is handed
+    private double yawWobble, pitchWobble;
+    private double driftX, driftY, driftZ;
     private Entity aimTarget;
 
     private static final long WALL_GRACE_MS = 500;
     private static final double AIM_INSET = 0.05; // blocks
     private static final double MARKER_HALF = 0.05;
+    // Drift and wobble decay toward rest each tick and take a gaussian kick, so the noise is
+    // correlated across ticks like a hand rather than white dither.
+    private static final double DRIFT_PULL = 0.18; // about five ticks of memory
+    private static final double DRIFT_STEP = 0.05; // settles near 0.09 of the hitbox extent
+    private static final double DRIFT_CLAMP = 0.22;
+    private static final double WOBBLE_PULL = 0.30;
+    private static final double WOBBLE_STEP = 0.11; // settles near 15% of the rate
+    private static final double WOBBLE_CLAMP = 0.45;
+    // The turn curve is fixed; the wobble is what makes it differ from one turn to the next.
+    private static final double ACCEL = 0.40; // fraction of the gap to top speed closed each tick
+    private static final double DECEL = 0.25; // starts braking about two and a half ticks out
 
     // Rotation graph ring buffer, one sample per tick of the wire look and ramp rates.
     private static final int GRAPH_TICKS = 200;
@@ -260,14 +264,15 @@ public class KillAura extends Module {
         }
         RotationManager rotations = RotationManager.getInstance();
         if (aimTarget != victim) {
-            yawRate = pitchRate = 0.0; // a new target is turned to from rest
-            // The aim point is varied once per target, in hitbox space.
-            aimX = .35 + random.nextDouble() * .3;
-            aimY = .45 + random.nextDouble() * .3;
-            aimZ = .35 + random.nextDouble() * .3;
+            yawBase = pitchBase = yawRate = pitchRate = 0.0; // a new target is turned to from rest
+            yawWobble = pitchWobble = 0.0;
+            driftX = driftY = driftZ = 0.0;
             aimPace = random.nextDouble();
             aimTarget = victim;
         }
+        driftX = drift(driftX);
+        driftY = drift(driftY);
+        driftZ = drift(driftZ);
         Vec3 eyes = player.getPositionEyes(1.0F);
         Vec3 aim = aimPoint(victim.getEntityBoundingBox(), eyes);
         float[] want = RotationManager.angleTo(eyes.xCoord, eyes.yCoord, eyes.zCoord,
@@ -276,12 +281,14 @@ public class KillAura extends Module {
         // Measure the error from the look the broker will move, not the camera it left behind.
         float fromYaw = rotations.isActive() ? rotations.getServerYaw() : player.rotationYaw;
         float fromPitch = rotations.isActive() ? rotations.getServerPitch() : player.rotationPitch;
-        yawRate = ramp(yawRate, paced(rotationSpeed),
-                Math.abs(MathHelper.wrapAngleTo180_double(want[0] - fromYaw)),
-                paced(yawAccel) / 100.0, paced(yawDecel) / 100.0);
-        pitchRate = ramp(pitchRate, paced(pitchSpeed),
-                Math.abs(want[1] - fromPitch),
-                paced(pitchAccel) / 100.0, paced(pitchDecel) / 100.0);
+        yawBase = ramp(yawBase, paced(rotationSpeed),
+                Math.abs(MathHelper.wrapAngleTo180_double(want[0] - fromYaw)), ACCEL, DECEL);
+        pitchBase = ramp(pitchBase, paced(pitchSpeed),
+                Math.abs(want[1] - fromPitch), ACCEL, DECEL);
+        yawWobble = wobble(yawWobble);
+        pitchWobble = wobble(pitchWobble);
+        yawRate = wobbled(yawBase, yawWobble);
+        pitchRate = wobbled(pitchBase, pitchWobble);
         rotations.request(this, want[0], want[1], ResourcePriority.NORMAL, yawRate, pitchRate);
     }
 
@@ -300,6 +307,22 @@ public class KillAura extends Module {
         double goal = decel > 0 ? Math.min(cap, error / (decel * 10.0)) : cap; // 100% brakes ten ticks out
         double gain = goal > rate ? accel : decel;
         return Math.max(rate + (goal - rate) * gain, RotationManager.gcdStep());
+    }
+
+    // One step of a mean-reverting walk. The pull forgets the past, the gaussian adds the new wander.
+    private double drift(double offset) {
+        return MathHelper.clamp_double(offset - DRIFT_PULL * offset + DRIFT_STEP * random.nextGaussian(),
+                -DRIFT_CLAMP, DRIFT_CLAMP);
+    }
+
+    private double wobble(double swing) {
+        return MathHelper.clamp_double(swing - WOBBLE_PULL * swing + WOBBLE_STEP * random.nextGaussian(),
+                -WOBBLE_CLAMP, WOBBLE_CLAMP);
+    }
+
+    // The wobble never inverts or stalls the turn; the floor is the one ramp uses.
+    private static double wobbled(double rate, double swing) {
+        return Math.max(rate * (1.0 + swing), RotationManager.gcdStep());
     }
 
     static long nextDeadline(long previous, long now, long delay) {
@@ -444,14 +467,16 @@ public class KillAura extends Module {
 
     private Vec3 aimPoint(AxisAlignedBB box, Vec3 eyes) {
         AxisAlignedBB in = box.contract(AIM_INSET, AIM_INSET, AIM_INSET);
+        Vec3 base = basePoint(in, eyes);
+        // Wandering inside the hitbox keeps the ray on the target, so the drift never costs a hit.
+        return in.closestPoint(base.addVector((in.maxX - in.minX) * driftX,
+                (in.maxY - in.minY) * driftY,
+                (in.maxZ - in.minZ) * driftZ));
+    }
+
+    private Vec3 basePoint(AxisAlignedBB in, Vec3 eyes) {
         Vec3 center = in.getCenter();
-        String mode = raytrace.get();
-        if (LINEAR.equals(mode)) {
-            return new Vec3(in.minX + (in.maxX - in.minX) * aimX,
-                    in.minY + (in.maxY - in.minY) * aimY,
-                    in.minZ + (in.maxZ - in.minZ) * aimZ);
-        }
-        if (FIRST.equals(mode)) {
+        if (FIRST.equals(raytrace.get())) {
             Vec3 look = RotationManager.getInstance().getServerLookVec();
             Vec3 toCenter = center.subtract(eyes);
             // Looking away from the box, a probe along the look would pick the far face.
