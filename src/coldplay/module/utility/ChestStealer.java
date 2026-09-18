@@ -29,14 +29,14 @@ import net.minecraft.world.World;
 
 import java.util.function.BooleanSupplier;
 
-/** Shift-clicks stacks out of an open chest, nearest to the last click first. Hypixel mode never shows the GUI. */
 public class ChestStealer extends Module {
-    private static final String NORMAL = "Normal";
-    private static final String HYPIXEL = "Hypixel";
 
-    private final ModeSetting mode = add(new ModeSetting("Mode", NORMAL, NORMAL, HYPIXEL)
-            .describe("Normal steals from the chest GUI. Hypixel keeps the chest hidden and takes everything in one tick."));
+    private static final String NORMAL = "Normal", HYPIXEL = "Hypixel";
+    private static final long SILENT_OPEN_MS = 100L, IDLE_RESCAN_MS = 150L;
+
+    private final ModeSetting mode = add(new ModeSetting("Mode", NORMAL, NORMAL, HYPIXEL).describe("Normal steals from the chest GUI. Hypixel keeps the chest hidden and takes everything in one tick."));
     private final RangeSetting delay = add(new RangeSetting("Delay", 120.0, 520.0, 50.0, 1000.0, 5.0).describe("Wait between item moves (ms): min for adjacent slots, max across the chest."));
+
     private final BooleanSupplier autoClose;
 
     private Container active;
@@ -66,19 +66,15 @@ public class ChestStealer extends Module {
         clickedChest = false;
     }
 
-    // NPC and compass menus reuse GuiChest, so only steal from a menu opened by clicking a chest block.
     @EventTarget
     public void onUse(EventUse event) {
         MovingObjectPosition hit = event.getTarget();
         World world = Minecraft.getMinecraft().theWorld;
-        clickedChest = false;
-        if (world != null && hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
-            Block block = world.getBlockState(hit.getBlockPos()).getBlock();
-            clickedChest = block instanceof BlockChest || block instanceof BlockEnderChest;
-        }
+        Block block = world == null || hit == null || hit.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK
+                ? null : world.getBlockState(hit.getBlockPos()).getBlock();
+        clickedChest = block instanceof BlockChest || block instanceof BlockEnderChest;
     }
 
-    // The server only sees packets, so open the container without its screen.
     @EventTarget
     public void onOpenWindow(EventOpenWindow event) {
         EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
@@ -101,7 +97,7 @@ public class ChestStealer extends Module {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayerSP player = mc.thePlayer;
         if (player != null && silentId != -1 && player.openContainer.windowId != silentId) {
-            closeSilent(player); // inventory opened over it, or the server closed it
+            closeSilent(player);
         }
         boolean silent = silentId != -1 && mc.currentScreen == null;
         if (player == null || mc.theWorld == null || !(silent || mc.currentScreen instanceof GuiChest)
@@ -114,58 +110,50 @@ public class ChestStealer extends Module {
         transactions.begin(container, mc.currentScreen);
         if (active != container) {
             active = container;
-            realChest = silent || clickedChest; // silent windows were already checked on open
+            realChest = silent || clickedChest;
             clickedChest = false;
             lastSlot = -1;
-            nextAt = System.currentTimeMillis() + (silent ? 100 : InvUtil.reactionDelayMs());
+            nextAt = System.currentTimeMillis() + (silent ? SILENT_OPEN_MS : InvUtil.reactionDelayMs());
         }
         if (!realChest || transactions.isRecovering() || player.inventory.getItemStack() != null
                 || System.currentTimeMillis() < nextAt) {
             return;
         }
-
         int chestSlots = ((ContainerChest) container).getLowerChestInventory().getSizeInventory();
         Slot target = nearest(container, chestSlots, lastSlot);
-        if (target == null) {
-            // wait for pending replies; they may refute the local prediction
-            if (transactions.hasPending()) {
-                return;
+        if (target != null) {
+            if (!InvUtil.isPlayerMoving(player) && ActionGuard.getInstance().tryReserveAfterCleanTick(this)) {
+                steal(player, container, chestSlots, target, silent);
             }
+        } else if (!transactions.hasPending()) {
             if (silent) {
                 closeSilent(player);
             } else if (autoClose.getAsBoolean()) {
                 player.closeScreen();
+            } else {
+                nextAt = System.currentTimeMillis() + IDLE_RESCAN_MS;
             }
-            return;
         }
-        // Movement and recent actions pause stealing, but must not keep a finished chest open.
-        if (ActionGuard.getInstance().playerActedLastTick() || InvUtil.isPlayerMoving(player)
-                || !ActionGuard.getInstance().tryReserve(this)) {
-            return;
-        }
-        int slot = target.slotNumber;
+    }
+
+    private void steal(EntityPlayerSP player, Container container, int chestSlots, Slot target, boolean silent) {
         PacketLog.getInstance().tagged("ChestStealer", () -> {
-            if (silent) {
-                Slot s = target;
-                for (int i = 0; s != null && i < chestSlots; i++) {
-                    if (!InvUtil.click(player, container, s.slotNumber, 0, 1)) {
-                        break;
-                    }
-                    s = nearest(container, chestSlots, s.slotNumber);
+            Slot next = target;
+            for (int i = 0, limit = silent ? chestSlots : 1; next != null && i < limit; i++) {
+                int from = next.slotNumber;
+                if (!InvUtil.click(player, container, from, 0, 1)) {
+                    return;
                 }
-                return;
+                next = nearest(container, chestSlots, from);
+                if (!silent) {
+                    lastSlot = from;
+                    nextAt = System.currentTimeMillis() + InvUtil.moveDelayMs(delay.getLo(), delay.getHi(),
+                            container, from, next == null ? -1 : next.slotNumber);
+                }
             }
-            if (!InvUtil.click(player, container, slot, 0, 1)) {
-                return;
-            }
-            Slot next = nearest(container, chestSlots, slot); // click already predicted locally
-            nextAt = System.currentTimeMillis() + InvUtil.moveDelayMs(delay.getLo(), delay.getHi(), container,
-                    slot, next == null ? -1 : next.slotNumber);
-            lastSlot = slot;
         });
     }
 
-    // closeScreen() would also shut chat or the pause menu, so close by packet.
     private void closeSilent(EntityPlayerSP player) {
         boolean ours = player.openContainer.windowId == silentId;
         if (ours || player.openContainer == player.inventoryContainer) {
@@ -177,13 +165,14 @@ public class ChestStealer extends Module {
         silentId = -1;
     }
 
-    static Slot nearest(Container container, int chestSlots, int fromSlot) {
+    private static Slot nearest(Container container, int chestSlots, int fromSlot) {
+        InventoryTransactions transactions = InventoryTransactions.getInstance();
         Slot from = InvUtil.slotByNumber(container, fromSlot), best = null;
         double bestDistance = Double.POSITIVE_INFINITY;
         for (int i = 0; i < chestSlots; i++) {
             Slot slot = container.getSlot(i);
-            if (!slot.getHasStack() || !fits(container, chestSlots, slot.getStack())
-                    || !InventoryTransactions.getInstance().canClick(container, i, 0, 1)) {
+            if (!slot.getHasStack() || !transactions.canClick(container, i, 0, 1)
+                    || !fits(container, chestSlots, slot.getStack())) {
                 continue;
             }
             double distance = InvUtil.slotDistance(from, slot);
@@ -195,17 +184,13 @@ public class ChestStealer extends Module {
         return best;
     }
 
-    // Container.mergeItemStack is protected and mutates, so redo the check read-only.
-    static boolean fits(Container c, int chestSlots, ItemStack stack) {
-        for (int i = chestSlots; i < c.inventorySlots.size(); i++) {
-            ItemStack in = c.getSlot(i).getStack();
-            if (in == null) {
-                return true;
-            }
-            if (stack.isStackable() && in.getItem() == stack.getItem()
-                    && (!stack.getHasSubtypes() || stack.getMetadata() == in.getMetadata())
-                    && ItemStack.areItemStackTagsEqual(stack, in)
-                    && in.stackSize < stack.getMaxStackSize()) {
+    private static boolean fits(Container container, int chestSlots, ItemStack stack) {
+        for (int i = chestSlots; i < container.inventorySlots.size(); i++) {
+            ItemStack in = container.getSlot(i).getStack();
+            if (in == null || stack.isStackable() && in.stackSize < in.getMaxStackSize()
+                    && in.getItem() == stack.getItem()
+                    && (!stack.getHasSubtypes() || in.getMetadata() == stack.getMetadata())
+                    && ItemStack.areItemStackTagsEqual(stack, in)) {
                 return true;
             }
         }
