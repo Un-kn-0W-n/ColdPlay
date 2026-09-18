@@ -58,9 +58,11 @@ public class KillAura extends Module {
             .describe("Single: hold one target until it leaves range or FOV. Switch: re-pick the best target every tick."));
     private final HeaderSetting rotationsHeader = add(new HeaderSetting("Rotations"));
     public final RangeSetting rotationSpeed = add(new RangeSetting("Rotation Speed", 18.0, 22.0, 1.0, 180.0, 0.5)
-            .describe("Top yaw speed in degrees per tick. A pace within the range is chosen per target; slider changes apply immediately."));
+            .describe("Baseline yaw speed in degrees per tick, before the per-tick hand gain, which both slows and "
+                    + "flicks around it. A pace within the range is chosen per target; slider changes apply immediately."));
     public final RangeSetting pitchSpeed = add(new RangeSetting("Pitch Speed", 18.0, 22.0, 1.0, 180.0, 0.5)
-            .describe("Top pitch speed in degrees per tick, using the same relative pace as yaw. Slider changes apply immediately."));
+            .describe("Baseline pitch speed in degrees per tick, using the same relative pace and the same hand gain "
+                    + "as yaw. Slider changes apply immediately."));
     public final NumberSetting rotationRange = add(new NumberSetting("Rotation Range", 5.0, 1.0, 8.0, 0.1)
             .describe("Start aiming at targets within this distance (blocks); attacking still waits for Attack Range."));
     public final NumberSetting fov = add(new NumberSetting("FOV", 90.0, 10.0, 360.0, 1.0).describe("Only target within this view cone (degrees)."));
@@ -84,24 +86,41 @@ public class KillAura extends Module {
     private long nextClickAt;
     private long lastSeenAt;
     private double aimPace;
-    private double yawBase, pitchBase; // ramp state, before the wobble
+    private double yawBase, pitchBase; // ramp state, before the gain
     private double yawRate, pitchRate; // what the broker is handed
-    private double yawWobble, pitchWobble;
-    private double driftX, driftY, driftZ;
+    private double handGain, yawGain, pitchGain;
+    private double driftHand, driftX, driftY, driftZ;
+    private int holdTicks, moveTicks;
     private Entity aimTarget;
 
     private static final long WALL_GRACE_MS = 500;
     private static final double AIM_INSET = 0.05; // blocks
     private static final double MARKER_HALF = 0.05;
-    // Drift and wobble decay toward rest each tick and take a gaussian kick, so the noise is
+    // Drift and gain decay toward rest each tick and take a gaussian kick, so the noise is
     // correlated across ticks like a hand rather than white dither.
     private static final double DRIFT_PULL = 0.18; // about five ticks of memory
-    private static final double DRIFT_STEP = 0.05; // settles near 0.09 of the hitbox extent
+    private static final double DRIFT_STEP = 0.035;
     private static final double DRIFT_CLAMP = 0.22;
-    private static final double WOBBLE_PULL = 0.30;
-    private static final double WOBBLE_STEP = 0.11; // settles near 15% of the rate
-    private static final double WOBBLE_CLAMP = 0.45;
-    // The turn curve is fixed; the wobble is what makes it differ from one turn to the next.
+    // A hand drags the aim point along a line, it does not jitter each axis on its own.
+    private static final double DRIFT_SHARE = 0.75; // share^2 + solo^2 = 1 holds the old amplitude
+    private static final double DRIFT_SOLO = 0.66;
+    private static final double DRIFT_VERTICAL = 1.3; // pitch ends up carrying about half of yaw's travel
+    // One multiplicative gain drives both axes, so a fast yaw tick is a fast pitch tick. In log
+    // space, which makes it heavy tailed: a real turn is mostly small steps with the odd flick.
+    private static final double GAIN_PULL = 0.35;
+    private static final double GAIN_STEP = 0.90;
+    private static final double GAIN_CLAMP = 1.9; // e^1.9, so about sevenfold either way
+    private static final double SOLO_PULL = 0.50; // what is left after the shared part, per axis
+    private static final double SOLO_STEP = 0.12;
+    private static final double SOLO_CLAMP = 0.80;
+    // The hand moves in bursts and rests between them. Run lengths are geometric with these means,
+    // measured from the combat windows of a legit recording: about eight ticks moving, four resting.
+    private static final double MOVE_CONTINUE = 0.873;
+    private static final double HOLD_CONTINUE = 0.85;
+    private static final int MOVE_MAX = 200;
+    private static final int HOLD_MAX = 40;
+    private static final double HOLD_MARGIN = 0.9; // end a rest before the frozen ray walks off the box
+    // The turn curve is fixed; the gain is what makes it differ from one turn to the next.
     private static final double ACCEL = 0.40; // fraction of the gap to top speed closed each tick
     private static final double DECEL = 0.25; // starts braking about two and a half ticks out
 
@@ -265,35 +284,89 @@ public class KillAura extends Module {
         RotationManager rotations = RotationManager.getInstance();
         if (aimTarget != victim) {
             yawBase = pitchBase = yawRate = pitchRate = 0.0; // a new target is turned to from rest
-            yawWobble = pitchWobble = 0.0;
-            driftX = driftY = driftZ = 0.0;
+            handGain = yawGain = pitchGain = 0.0;
+            driftHand = driftX = driftY = driftZ = 0.0;
+            holdTicks = 0;
+            moveTicks = burst(MOVE_CONTINUE, MOVE_MAX);
             aimPace = random.nextDouble();
             aimTarget = victim;
         }
-        driftX = drift(driftX);
-        driftY = drift(driftY);
-        driftZ = drift(driftZ);
+        // A resting hand does not wander either, so the aim point freezes with the look.
+        if (holdTicks <= 0) {
+            driftHand = drift(driftHand);
+            driftX = drift(driftX);
+            driftY = drift(driftY);
+            driftZ = drift(driftZ);
+        }
         Vec3 eyes = player.getPositionEyes(1.0F);
-        Vec3 aim = aimPoint(victim.getEntityBoundingBox(), eyes);
+        AxisAlignedBB in = aimBox(victim.getEntityBoundingBox());
+        Vec3 aim = aimPoint(in, eyes);
         float[] want = RotationManager.angleTo(eyes.xCoord, eyes.yCoord, eyes.zCoord,
                 aim.xCoord, aim.yCoord, aim.zCoord);
 
         // Measure the error from the look the broker will move, not the camera it left behind.
         float fromYaw = rotations.isActive() ? rotations.getServerYaw() : player.rotationYaw;
         float fromPitch = rotations.isActive() ? rotations.getServerPitch() : player.rotationPitch;
-        yawBase = ramp(yawBase, paced(rotationSpeed),
-                Math.abs(MathHelper.wrapAngleTo180_double(want[0] - fromYaw)), ACCEL, DECEL);
-        pitchBase = ramp(pitchBase, paced(pitchSpeed),
-                Math.abs(want[1] - fromPitch), ACCEL, DECEL);
-        yawWobble = wobble(yawWobble);
-        pitchWobble = wobble(pitchWobble);
-        yawRate = wobbled(yawBase, yawWobble);
-        pitchRate = wobbled(pitchBase, pitchWobble);
+        double yawError = Math.abs(MathHelper.wrapAngleTo180_double(want[0] - fromYaw));
+        double pitchError = Math.abs(want[1] - fromPitch);
+        boolean onTarget = onTarget(eyes, in, yawError, pitchError);
+        if (holdTicks > 0 && !onTarget) {
+            holdTicks = 0; // the target walked out from under the frozen ray
+        }
+        yawBase = ramp(yawBase, paced(rotationSpeed), yawError, ACCEL, DECEL);
+        pitchBase = ramp(pitchBase, paced(pitchSpeed), pitchError, ACCEL, DECEL);
+        handGain = gain(handGain, GAIN_PULL, GAIN_STEP, GAIN_CLAMP);
+        yawGain = gain(yawGain, SOLO_PULL, SOLO_STEP, SOLO_CLAMP);
+        pitchGain = gain(pitchGain, SOLO_PULL, SOLO_STEP, SOLO_CLAMP);
+        double hand = Math.exp(handGain);
+        yawRate = geared(yawBase, hand, yawGain);
+        pitchRate = geared(pitchBase, hand, pitchGain);
+
+        if (holdTicks > 0) {
+            // Re-requesting the look the broker already holds steps it by nothing, so the wire
+            // look repeats exactly, the way it does while a hand is off the mouse.
+            holdTicks--;
+            if (holdTicks == 0) {
+                moveTicks = burst(MOVE_CONTINUE, MOVE_MAX);
+            }
+            rotations.request(this, fromYaw, fromPitch, ResourcePriority.NORMAL, yawRate, pitchRate);
+            return;
+        }
+        if (moveTicks > 0) {
+            moveTicks--;
+        }
+        // A rest that is due waits for the ray to be on the target, so it never starts off it.
+        if (moveTicks <= 0 && onTarget) {
+            holdTicks = burst(HOLD_CONTINUE, HOLD_MAX);
+        }
         rotations.request(this, want[0], want[1], ResourcePriority.NORMAL, yawRate, pitchRate);
     }
 
     private void resetAim() {
         aimTarget = null;
+        holdTicks = 0;
+    }
+
+    /** Geometric run length: one tick, plus a coin that keeps landing heads. */
+    private int burst(double keep, int cap) {
+        int ticks = 1;
+        while (ticks < cap && random.nextDouble() < keep) {
+            ticks++;
+        }
+        return ticks;
+    }
+
+    /** True while the frozen look would still land on the hitbox, with a margin to end a rest early. */
+    private static boolean onTarget(Vec3 eyes, AxisAlignedBB in, double yawError, double pitchError) {
+        Vec3 center = in.getCenter();
+        double dx = center.xCoord - eyes.xCoord;
+        double dy = center.yCoord - eyes.yCoord;
+        double dz = center.zCoord - eyes.zCoord;
+        double flat = Math.max(Math.sqrt(dx * dx + dz * dz), 0.5);
+        double reach = Math.max(Math.sqrt(flat * flat + dy * dy), 0.5);
+        // The box is square in X and Z for anything that gets targeted, so either half-width will do.
+        return yawError < Math.toDegrees(Math.atan2((in.maxX - in.minX) * 0.5, flat)) * HOLD_MARGIN
+                && pitchError < Math.toDegrees(Math.atan2((in.maxY - in.minY) * 0.5, reach)) * HOLD_MARGIN;
     }
 
     // Read live so a slider edit lands next tick; only the pace is rolled per target.
@@ -301,12 +374,14 @@ public class KillAura extends Module {
         return setting.getLo() + aimPace * (setting.getHi() - setting.getLo());
     }
 
-    // Eases the rate toward a ceiling that drops near the target, once per tick; floored at one mouse count.
+    // Eases the rate toward a ceiling that drops near the target, once per tick. There is no floor:
+    // a rate under one mouse count snaps to nothing and carries in the broker's remainder, which is
+    // how a settled aim produces the single-count corrections and idle ticks a real one does.
     private static double ramp(double rate, double cap, double error, double accel, double decel) {
         rate = Math.min(rate, cap); // a lowered slider has to bite on this tick
         double goal = decel > 0 ? Math.min(cap, error / (decel * 10.0)) : cap; // 100% brakes ten ticks out
-        double gain = goal > rate ? accel : decel;
-        return Math.max(rate + (goal - rate) * gain, RotationManager.gcdStep());
+        double step = goal > rate ? accel : decel;
+        return Math.max(rate + (goal - rate) * step, 0.0);
     }
 
     // One step of a mean-reverting walk. The pull forgets the past, the gaussian adds the new wander.
@@ -315,14 +390,14 @@ public class KillAura extends Module {
                 -DRIFT_CLAMP, DRIFT_CLAMP);
     }
 
-    private double wobble(double swing) {
-        return MathHelper.clamp_double(swing - WOBBLE_PULL * swing + WOBBLE_STEP * random.nextGaussian(),
-                -WOBBLE_CLAMP, WOBBLE_CLAMP);
+    private double gain(double state, double pull, double step, double clamp) {
+        return MathHelper.clamp_double(state - pull * state + step * random.nextGaussian(), -clamp, clamp);
     }
 
-    // The wobble never inverts or stalls the turn; the floor is the one ramp uses.
-    private static double wobbled(double rate, double swing) {
-        return Math.max(rate * (1.0 + swing), RotationManager.gcdStep());
+    // The shared hand gain times what is left of this axis, both multiplicative. Overshoot is not a
+    // risk: the broker clamps the step to the remaining error, so a spike only closes the gap sooner.
+    private static double geared(double rate, double hand, double solo) {
+        return Math.max(rate * hand * Math.exp(solo), 0.0);
     }
 
     static long nextDeadline(long previous, long now, long delay) {
@@ -348,7 +423,7 @@ public class KillAura extends Module {
         }
         float partialTicks = event.getPartialTicks();
         Vec3 eyes = player.getPositionEyes(partialTicks);
-        Vec3 aim = aimPoint(interpBox(victim, partialTicks), eyes);
+        Vec3 aim = aimPoint(aimBox(interpBox(victim, partialTicks)), eyes);
 
         // Starting at the camera collapses the tracer to one pixel.
         Vec3 camLook = player.getLook(partialTicks);
@@ -465,13 +540,19 @@ public class KillAura extends Module {
         return victim.getEntityBoundingBox().offset(p.xCoord - victim.posX, p.yCoord - victim.posY, p.zCoord - victim.posZ);
     }
 
-    private Vec3 aimPoint(AxisAlignedBB box, Vec3 eyes) {
-        AxisAlignedBB in = box.contract(AIM_INSET, AIM_INSET, AIM_INSET);
+    private static AxisAlignedBB aimBox(AxisAlignedBB box) {
+        return box.contract(AIM_INSET, AIM_INSET, AIM_INSET);
+    }
+
+    private Vec3 aimPoint(AxisAlignedBB in, Vec3 eyes) {
         Vec3 base = basePoint(in, eyes);
+        double wanderX = driftX * DRIFT_SOLO + driftHand * DRIFT_SHARE;
+        double wanderY = driftY * DRIFT_SOLO + driftHand * DRIFT_SHARE;
+        double wanderZ = driftZ * DRIFT_SOLO + driftHand * DRIFT_SHARE;
         // Wandering inside the hitbox keeps the ray on the target, so the drift never costs a hit.
-        return in.closestPoint(base.addVector((in.maxX - in.minX) * driftX,
-                (in.maxY - in.minY) * driftY,
-                (in.maxZ - in.minZ) * driftZ));
+        return in.closestPoint(base.addVector((in.maxX - in.minX) * wanderX,
+                (in.maxY - in.minY) * DRIFT_VERTICAL * wanderY,
+                (in.maxZ - in.minZ) * wanderZ));
     }
 
     private Vec3 basePoint(AxisAlignedBB in, Vec3 eyes) {
