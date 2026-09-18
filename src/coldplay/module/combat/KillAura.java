@@ -194,7 +194,7 @@ public class KillAura extends Module {
             lastSeenAt = now;
         }
         boolean lost = target == null || !cm.isValid(player, target, f)
-                || holdOffset(player, target) > f.fov
+                || cm.angularOffset(player, target) > f.fov
                 || now - lastSeenAt > WALL_GRACE_MS;
         if (SWITCH.equals(lock.get()) || lost) {
             Entity picked = cm.acquire(player, f, priority.get());
@@ -304,14 +304,6 @@ public class KillAura extends Module {
 
     static long nextDeadline(long previous, long now, long delay) {
         return Math.max(previous, now - 50L) + delay;
-    }
-
-    private float holdOffset(EntityPlayerSP player, Entity entity) {
-        RotationManager rm = RotationManager.getInstance();
-        CombatManager cm = CombatManager.getInstance();
-        return rm.owns(this)
-                ? cm.angularOffset(player, entity, rm.getServerYaw(), rm.getServerPitch())
-                : cm.angularOffset(player, entity);
     }
 
     private boolean rayHitsTarget(EntityPlayerSP player, Entity victim, PlayerPacketState.Pose pose) {
