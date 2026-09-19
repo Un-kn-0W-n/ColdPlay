@@ -34,6 +34,9 @@ import net.minecraft.util.Vec3;
 import java.util.Random;
 
 public class KillAura extends Module {
+
+    // ---- Settings ----
+
     private final HeaderSetting filtersHeader = add(new HeaderSetting("Filters"));
     public final BooleanSetting players = add(new BooleanSetting("Players", true).describe("Target other players."));
     public final BooleanSetting mobs = add(new BooleanSetting("Mobs", false).describe("Target hostile mobs."));
@@ -73,19 +76,32 @@ public class KillAura extends Module {
                     + "plus a HUD graph of the broker yaw/pitch per tick and the turn rates (drag it in the HUD editor)."));
     private final NumberSetting graphScale = add(HudState.scaleSetting("Graph Scale"));
 
+    // ---- State ----
+
+    /** The entity we are fighting. Null means idle; see the three stop paths in the class doc. */
     private Entity target;
     private final Random random = new Random();
     private final HandProfile hand = new HandProfile(rotationSpeed, pitchSpeed);
+    /** Earliest time the next attack may go out, in ms. Advanced through {@link #nextDeadline}. */
     private long nextClickAt;
+    /** Last time the target was actually visible, for the wall grace below. */
     private long lastSeenAt;
+    /** Mirrors of the last {@link HandProfile.Step}, used only by the broker and the debug graph. */
     private double yawRate, pitchRate;
+
     private HandProfile.Wander wander = HandProfile.REST;
+    /** The target the hand is currently acquiring; a change here restarts the turn from rest. */
     private Entity aimTarget;
 
+    /** How long a target stays ours after it breaks line of sight. */
     private static final long WALL_GRACE_MS = 500;
+    /** Shrinks the hitbox before aiming, so the aim point never sits exactly on an edge. */
     private static final double AIM_INSET = 0.05;
+    /** Fraction of the hitbox's angular size that still counts as "on target" for a rest. */
     private static final double HOLD_MARGIN = 0.9;
     private final KillAuraDebug debug = new KillAuraDebug(graphScale, rotationSpeed, pitchSpeed);
+
+    // ---- Construction and lifecycle ----
 
     @Override
     public String getSuffix() {
@@ -118,7 +134,6 @@ public class KillAura extends Module {
         clearTarget();
     }
 
-    /** Hard invalidation/disable releases only our rotation ownership; pauses retain the lock. */
     private void clearTarget() {
         target = null;
         resetAim();
@@ -128,6 +143,8 @@ public class KillAura extends Module {
     public boolean isWorking() {
         return target != null;
     }
+
+    // ---- Phase 1: decide and hit (PRE @ NORMAL+2) ----
 
     @EventTarget(priority = EventPriority.NORMAL + 2)
     public void onUpdate(EventUpdate event) {
@@ -160,7 +177,6 @@ public class KillAura extends Module {
         }
     }
 
-    /** Retention is independent of attack eligibility; failed Switch picks keep wall grace. */
     private void selectTarget(EntityPlayerSP player, long now) {
         CombatManager cm = CombatManager.getInstance();
         CombatManager.Filters f = filters();
@@ -177,11 +193,8 @@ public class KillAura extends Module {
                 lastSeenAt = now;
             }
         }
-        // Natural loss resets the hand in AIM, then lets the broker return to the camera.
-        // Unlike hard invalidation, it does not cancel ownership early in PRE.
     }
 
-    /** Runs before AIM/movement: only the previously dispatched pose can authorize this hit. */
     private void attemptAttack(Minecraft mc, EntityPlayerSP player, long now) {
         PlayerPacketState packets = player.sendQueue.getNetworkManager().getPlayerPackets();
         PlayerPacketState.Pose pose = packets.getPose();
@@ -210,8 +223,7 @@ public class KillAura extends Module {
 
     private boolean canDispatchAttack(Minecraft mc, EntityPlayerSP player, Entity victim,
                                       PlayerPacketState.Pose validated, PlayerPacketState.Pose dispatched) {
-        // Existing fast path retained for the separate dispatch-policy review. Pose identity
-        // proves no dispatched movement, not that lifecycle/target state is still unchanged.
+
         if (dispatched == validated) {
             return true;
         }
@@ -222,6 +234,22 @@ public class KillAura extends Module {
                 && !victim.isDead
                 && clearToAttack(player, victim, dispatched);
     }
+
+    /** Does a ray cast from {@code pose} - the server-side look, not the camera - land on the victim? */
+    private boolean rayHitsTarget(EntityPlayerSP player, Entity victim, PlayerPacketState.Pose pose) {
+        if (!pose.isKnown()) {
+            return false;
+        }
+        double reach = range.get() + CombatManager.getInstance().getReachBonus();
+        return RayPicker.pick(player.worldObj, player, pose.eyes(player.getEyeHeight()), pose.look(),
+                reach, reach, 1.0D, null, false, false, true).getEntity() == victim;
+    }
+
+    static long nextDeadline(long previous, long now, long delay) {
+        return Math.max(previous, now - 50L) + delay;
+    }
+
+    // ---- Phase 2: turn (PRE @ AIM, the last word before the broker drains) ----
 
     @EventTarget(priority = EventPriority.AIM)
     public void onAim(EventUpdate event) {
@@ -268,6 +296,8 @@ public class KillAura extends Module {
         hand.reset();
     }
 
+    // ---- Aim geometry ----
+
     private static boolean onTarget(Vec3 eyes, AxisAlignedBB in, double yawError, double pitchError) {
         Vec3 center = in.getCenter();
         double dx = center.xCoord - eyes.xCoord;
@@ -277,39 +307,6 @@ public class KillAura extends Module {
         double reach = Math.sqrt(flat * flat + dy * dy);
         return yawError < Math.toDegrees(Math.atan2((in.maxX - in.minX) * 0.5, flat)) * HOLD_MARGIN
                 && pitchError < Math.toDegrees(Math.atan2((in.maxY - in.minY) * 0.5, reach)) * HOLD_MARGIN;
-    }
-
-    static long nextDeadline(long previous, long now, long delay) {
-        return Math.max(previous, now - 50L) + delay;
-    }
-
-    private boolean rayHitsTarget(EntityPlayerSP player, Entity victim, PlayerPacketState.Pose pose) {
-        if (!pose.isKnown()) {
-            return false;
-        }
-        double reach = range.get() + CombatManager.getInstance().getReachBonus();
-        return RayPicker.pick(player.worldObj, player, pose.eyes(player.getEyeHeight()), pose.look(),
-                reach, reach, 1.0D, null, false, false, true).getEntity() == victim;
-    }
-
-    @EventTarget
-    public void onRender3D(EventRender3D event) {
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.thePlayer;
-        Entity victim = target;
-        if (!render.get() || player == null || victim == null) {
-            return;
-        }
-        float partialTicks = event.getPartialTicks();
-        Vec3 eyes = player.getPositionEyes(partialTicks);
-        Vec3 aim = aimPoint(aimBox(interpBox(victim, partialTicks)), eyes, wander);
-
-        KillAuraDebug.drawTracer(eyes, player.getLook(partialTicks), aim);
-    }
-
-    private static AxisAlignedBB interpBox(Entity victim, float partialTicks) {
-        Vec3 p = RenderUtil.interpolatedPosition(victim, partialTicks);
-        return victim.getEntityBoundingBox().offset(p.xCoord - victim.posX, p.yCoord - victim.posY, p.zCoord - victim.posZ);
     }
 
     private static AxisAlignedBB aimBox(AxisAlignedBB box) {
@@ -336,6 +333,29 @@ public class KillAura extends Module {
             return in.closestPoint(probe);
         }
         return center;
+    }
+
+    /** The hitbox where it is being drawn this frame, so the tracer does not lag the entity. */
+    private static AxisAlignedBB interpBox(Entity victim, float partialTicks) {
+        Vec3 p = RenderUtil.interpolatedPosition(victim, partialTicks);
+        return victim.getEntityBoundingBox().offset(p.xCoord - victim.posX, p.yCoord - victim.posY, p.zCoord - victim.posZ);
+    }
+
+    // ---- Debug rendering ----
+
+    @EventTarget
+    public void onRender3D(EventRender3D event) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayerSP player = mc.thePlayer;
+        Entity victim = target;
+        if (!render.get() || player == null || victim == null) {
+            return;
+        }
+        float partialTicks = event.getPartialTicks();
+        Vec3 eyes = player.getPositionEyes(partialTicks);
+        Vec3 aim = aimPoint(aimBox(interpBox(victim, partialTicks)), eyes, wander);
+
+        KillAuraDebug.drawTracer(eyes, player.getLook(partialTicks), aim);
     }
 
     private CombatManager.Filters filters() {

@@ -65,6 +65,12 @@ public final class KillAuraDebug {
                 255, 60, 60, 180, 90, 255, 2.0F);
     }
 
+    /**
+     * Records one tick of broker state for the graph. This must stay purely passive: no randomness,
+     * no state that the aim reads back. The passive-diagnostics check asserts that toggling the
+     * Render setting changes neither the aim progression nor the combat randomness, so a sample
+     * taken here can never be allowed to consume a draw.
+     */
     public void sample(EntityPlayerSP player, double yawRate, double pitchRate) {
         RotationManager rm = RotationManager.getInstance();
         brokerYaw[graphHead] = rm.isActive() ? rm.getServerYaw() : player.rotationYaw;
