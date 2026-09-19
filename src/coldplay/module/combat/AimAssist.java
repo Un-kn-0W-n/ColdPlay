@@ -36,6 +36,7 @@ public class AimAssist extends Module {
 
     public AimAssist() {
         super("AimAssist", Category.COMBAT, "Smoothly steers your view onto the nearest valid target within range and FOV.");
+        addAutoOff();
     }
 
     @Override
@@ -50,7 +51,7 @@ public class AimAssist extends Module {
             return;
         }
         EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-        if (player == null || Minecraft.getMinecraft().theWorld == null) {
+        if (player == null || Minecraft.getMinecraft().theWorld == null || lookBusy()) {
             target = null;
             return;
         }
@@ -62,7 +63,7 @@ public class AimAssist extends Module {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayerSP player = mc.thePlayer;
         Entity victim = target;
-        if (player == null || victim == null || mc.currentScreen != null || !mc.inGameHasFocus) {
+        if (player == null || victim == null || mc.currentScreen != null || !mc.inGameHasFocus || lookBusy()) {
             // Don't carry a stale frame gap into the next target.
             lastFrameNanos = 0L;
             return;
@@ -91,6 +92,18 @@ public class AimAssist extends Module {
         float appliedPitch = RotationManager.gcdSnap((float) MathHelper.clamp_double(pitchDiff, -pitchStep, pitchStep));
 
         player.setAngles(appliedYaw / 0.15F, -appliedPitch / 0.15F);
+    }
+
+    /**
+     * True while another module owns the look through the rotation broker: Scaffold bridging, KillAura
+     * fighting, BedProtection walling. AimAssist turns the real camera, and the camera is also what steers
+     * walking, so aiming under a spoof would drag the owner's bridge off its line and fight its turn.
+     * Gating on the broker covers every owner at once, so no module has to hand AimAssist a flag of its own.
+     * The broker still reports active while it eases the spoof back onto the camera, so aiming only resumes
+     * once the look is really ours again - i.e. after Scaffold is off and the spoof has landed.
+     */
+    private static boolean lookBusy() {
+        return RotationManager.getInstance().isActive();
     }
 
     private CombatManager.Filters filters() {
