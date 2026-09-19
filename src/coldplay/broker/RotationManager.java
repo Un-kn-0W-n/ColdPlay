@@ -6,56 +6,78 @@ import coldplay.event.EventRender;
 import coldplay.event.EventStrafe;
 import coldplay.event.EventTarget;
 import coldplay.event.EventUpdate;
-import coldplay.util.MoveFix;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.util.MathHelper;
-
-/**
- * Silent rotation. Once per tick, before the player moves, turns a spoofed server-side look toward the
- * highest-priority request, rate-limited and snapped to the mouse GCD. That look drives movement physics
- * and the look packet; the third-person head is interpolated between ticks while the camera stays put.
- */
 public final class RotationManager {
 
     private static final RotationManager INSTANCE = new RotationManager();
+
+    /** Degrees per tick used to ease back to the camera once nobody is aiming. */
+    private static final double RETURN_RATE = 20.0D;
 
     public static RotationManager getInstance() {
         return INSTANCE;
     }
 
-    /** Drops the spoof after the server replaced the look (S08); the next request reseeds from the camera. */
-    public synchronized void resetAfterServerCorrection(EntityPlayerSP player) {
-        if (player != null) {
-            serverYaw = prevYaw = sentYaw = player.rotationYaw;
-            serverPitch = prevPitch = sentPitch = player.rotationPitch;
-            player.coldplayRenderPitch = Float.NaN;
-        }
-        active = false;
-        yawRemainder = pitchRemainder = 0.0;
-        reqOwner = null;
-        hasRequest = false;
-        lastOwner = null;
-        lastWinPriority = Integer.MIN_VALUE;
-        MoveFix.resetHysteresis();
+    private enum State {
+        /** No spoof; the wire carries the camera. */
+        OFF,
+        /** An owner is aiming. */
+        TRACKING,
+        /** A screen is open, so the wire look is frozen where it stood. */
+        HOLDING,
+        /** Nobody is aiming; easing the spoof back onto the camera before handing over. */
+        RETURNING
     }
 
-    private float serverYaw, serverPitch;
-    private float prevYaw, prevPitch; // before this tick's step
-    private double yawRemainder, pitchRemainder; // unapplied fraction of a GCD step
-    private double prevYawRemainder, prevPitchRemainder;
-    private float sentYaw, sentPitch; // look on the last movement packet
-    private boolean active;
+    /** A spoofed look together with the sub-GCD carry that produced it. Immutable. */
+    static final class Look {
+        final float yaw;
+        final float pitch;
+        final double yawCarry;
+        final double pitchCarry;
 
-    private Object reqOwner;
-    private float reqYaw, reqPitch;
-    private int reqPriority;
-    private double reqYawRate, reqPitchRate;
-    private boolean hasRequest;
-    private Object lastOwner;
+        Look(float yaw, float pitch, double yawCarry, double pitchCarry) {
+            this.yaw = yaw;
+            this.pitch = pitch;
+            this.yawCarry = yawCarry;
+            this.pitchCarry = pitchCarry;
+        }
+    }
+
+    /** One producer's bid for a tick. Immutable. */
+    static final class Request {
+        final Object owner;
+        final float yaw;
+        final float pitch;
+        final int priority;
+        final double yawRate;
+        final double pitchRate;
+
+        Request(Object owner, float yaw, float pitch, int priority, double yawRate, double pitchRate) {
+            this.owner = owner;
+            this.yaw = yaw;
+            this.pitch = pitch;
+            this.priority = priority;
+            this.yawRate = yawRate;
+            this.pitchRate = pitchRate;
+        }
+    }
+
+    private State state = State.OFF;
+    /** The spoofed look on the wire right now. */
+    private Look current = new Look(0.0F, 0.0F, 0.0, 0.0);
+    /** The look this tick started from: the render interpolation source and the reaim replay base. */
+    private Look tickStart = current;
+    /** This tick's winning bid, consumed exactly once by {@link #runTick}. */
+    private Request pending;
+    /** The bid {@link #current} was produced from, or null when nobody owns the spoof. */
+    private Request committed;
+    private float sentYaw, sentPitch; // look on the last movement packet
     private EntityPlayerSP trackedPlayer;
     private net.minecraft.world.World trackedWorld;
-    private int lastWinPriority = Integer.MIN_VALUE;
+
     private RotationManager() {
     }
 
@@ -75,6 +97,18 @@ public final class RotationManager {
         }
     }
 
+    /** Drops the spoof after the server replaced the look (S08); the next request reseeds from the camera. */
+    public void resetAfterServerCorrection(EntityPlayerSP player) {
+        if (player == null) {
+            reset(current.yaw, current.pitch);
+            return;
+        }
+        sentYaw = player.rotationYaw;
+        sentPitch = player.rotationPitch;
+        player.coldplayRenderPitch = Float.NaN;
+        reset(player.rotationYaw, player.rotationPitch);
+    }
+
     /**
      * Turns the server-side look toward (yaw, pitch) at up to turnRate degrees per tick. Call every tick
      * from EventUpdate PRE at {@link EventPriority#AIM}; the highest priority wins and the first request
@@ -84,26 +118,20 @@ public final class RotationManager {
         request(who, yaw, pitch, priority, turnRate, turnRate);
     }
 
-    public synchronized void request(Object who, float yaw, float pitch, int priority,
-                                     double yawRate, double pitchRate) {
-        if (hasRequest && priority <= reqPriority) {
+    public void request(Object who, float yaw, float pitch, int priority,
+                        double yawRate, double pitchRate) {
+        if (pending != null && priority <= pending.priority) {
             return;
         }
-        reqOwner = who;
-        reqYaw = yaw;
-        reqPitch = pitch;
-        reqPriority = priority;
-        reqYawRate = yawRate;
-        reqPitchRate = pitchRate;
-        hasRequest = true;
+        pending = new Request(who, yaw, pitch, priority, yawRate, pitchRate);
     }
 
     public float getServerYaw() {
-        return serverYaw;
+        return current.yaw;
     }
 
     public float getServerPitch() {
-        return serverPitch;
+        return current.pitch;
     }
 
     /** The look the server holds until this tick's movement packet; actions sent before it are judged against it. */
@@ -120,41 +148,48 @@ public final class RotationManager {
     }
 
     public boolean isActive() {
-        return active;
+        return state != State.OFF;
     }
 
     public String packetLogContext() {
-        String owner = lastOwner instanceof coldplay.module.Module
-                ? ((coldplay.module.Module) lastOwner).getName()
-                : lastOwner == null ? "none" : lastOwner.getClass().getSimpleName();
-        Minecraft mc = Minecraft.getMinecraft();
-        String mode = !active ? "camera" : mc.currentScreen != null || !mc.inGameHasFocus
-                ? "gui-hold" : lastOwner == null ? "return-to-camera" : "tracking";
-        String state = "rotationMode=" + mode + "; rotationOwner=" + owner;
-        return !active ? state : state + "; brokerYaw=" + serverYaw + "; brokerPitch=" + serverPitch
-                + "; requestedYaw=" + reqYaw + "; requestedPitch=" + reqPitch
-                + "; yawRate=" + reqYawRate + "; pitchRate=" + reqPitchRate;
-    }
-
-    public boolean owns(Object who) {
-        return isActive() && lastOwner == who;
-    }
-
-    public synchronized void cancel(Object who) {
-        if (reqOwner == who) {
-            reqOwner = null;
-            hasRequest = false;
+        Object owner = committed == null ? null : committed.owner;
+        String name = owner instanceof coldplay.module.Module
+                ? ((coldplay.module.Module) owner).getName()
+                : owner == null ? "none" : owner.getClass().getSimpleName();
+        String mode = state == State.OFF ? "camera"
+                : state == State.HOLDING ? "gui-hold"
+                : state == State.RETURNING ? "return-to-camera" : "tracking";
+        String context = "rotationMode=" + mode + "; rotationOwner=" + name;
+        if (state == State.OFF) {
+            return context;
         }
-        if (lastOwner == who) {
-            lastOwner = null;
-            yawRemainder = pitchRemainder = 0.0;
-            lastWinPriority = Integer.MIN_VALUE;
-            MoveFix.resetHysteresis();
+        context += "; brokerYaw=" + current.yaw + "; brokerPitch=" + current.pitch;
+        return committed == null ? context
+                : context + "; requestedYaw=" + committed.yaw + "; requestedPitch=" + committed.pitch
+                        + "; yawRate=" + committed.yawRate + "; pitchRate=" + committed.pitchRate;
+    }
+
+    /** True only while {@code who} is actually driving the spoof; false under a GUI hold or a return. */
+    public boolean owns(Object who) {
+        return committed != null && committed.owner == who;
+    }
+
+    public void cancel(Object who) {
+        if (pending != null && pending.owner == who) {
+            pending = null;
+        }
+        if (committed != null && committed.owner == who) {
+            committed = null;
+            // The spoof outlives the owner that placed it: it stands where it is until the next
+            // tick eases it back onto the camera, so that is what the broker is now doing.
+            if (state == State.TRACKING) {
+                state = State.RETURNING;
+            }
         }
     }
 
     public boolean isBusyAbove(int priority) {
-        return isActive() && lastWinPriority > priority;
+        return committed != null && committed.priority > priority;
     }
 
     /** Ticks since {@code lastNanos}, capped at 10 like the vanilla timer; 0 when there is no prior frame. */
@@ -164,7 +199,10 @@ public final class RotationManager {
 
     /** Snaps a rotation delta to a whole multiple of one mouse count at the live sensitivity. */
     public static float gcdSnap(float delta) {
-        float gcd = gcdStep();
+        return snap(delta, gcdStep());
+    }
+
+    private static float snap(float delta, float gcd) {
         return gcd > 0.0F ? Math.round(delta / gcd) * gcd : delta;
     }
 
@@ -186,7 +224,7 @@ public final class RotationManager {
     }
 
     public net.minecraft.util.Vec3 getServerLookVec() {
-        return lookVec(serverYaw, serverPitch);
+        return lookVec(current.yaw, current.pitch);
     }
 
     /**
@@ -194,7 +232,7 @@ public final class RotationManager {
      * to the spoofed yaw.
      */
     public float remapBodyTarget(float bodyTarget, float realYaw) {
-        return bodyTarget == realYaw ? serverYaw : bodyTarget;
+        return bodyTarget == realYaw ? current.yaw : bodyTarget;
     }
 
     /** After every producer has requested for this tick, before the player moves. */
@@ -207,140 +245,148 @@ public final class RotationManager {
         tick(mc.thePlayer, mc.currentScreen != null || !mc.inGameHasFocus);
     }
 
-    private synchronized void tick(EntityPlayerSP player, boolean gui) {
-        if (player == null || !active && (!hasRequest || gui)) {
-            release(player);
+    private void tick(EntityPlayerSP player, boolean gui) {
+        if (player == null) {
+            pending = null;
+            reset(current.yaw, current.pitch);
             return;
         }
-        if (gui) { // vanilla cannot turn under a GUI; hold the wire look until it closes
-            prevYaw = serverYaw;
-            prevPitch = serverPitch;
-            yawRemainder = pitchRemainder = prevYawRemainder = prevPitchRemainder = 0.0;
-            hasRequest = false;
-            return;
+        float turns = runTick(player.rotationYaw, player.rotationPitch, gui, gcdStep());
+        if (turns != 0.0F) {
+            // The spoof and the camera both accumulate unbounded, so at handoff they can sit a whole
+            // number of turns apart. Shifting the camera is invisible (rendering is mod 360) and keeps
+            // the outgoing yaw continuous; re-branching the spoof would inject a 360 deg packet jump.
+            player.rotationYaw += turns;
+            player.prevRotationYaw += turns;
         }
-        if (!hasRequest) {
-            // Return to the camera at the last rate, floored so a braked owner cannot leave a crawl behind.
-            float gcd = gcdStep();
-            if (Math.abs(MathHelper.wrapAngleTo180_float(player.rotationYaw - serverYaw)) < gcd
-                    && Math.abs(player.rotationPitch - serverPitch) < gcd) {
-                release(player);
-                return;
+        if (state == State.OFF) {
+            player.coldplayRenderPitch = Float.NaN;
+        } else if (state != State.HOLDING) {
+            applyRenderLook(player);
+        }
+    }
+
+    /**
+     * One whole tick of the state machine, expressed without the player so it can be exercised
+     * headlessly. Returns the whole-turn camera shift the caller must apply on handoff.
+     */
+    float runTick(float cameraYaw, float cameraPitch, boolean gui, float gcd) {
+        Request request = pending; // consumed exactly once, here
+        pending = null;
+        tickStart = current;
+
+        if (gui) { // vanilla cannot turn under a screen, so the wire look freezes where it stands
+            if (state != State.OFF) {
+                state = State.HOLDING;
+                committed = null;
             }
-            reqOwner = null;
-            reqYaw = player.rotationYaw;
-            reqPitch = player.rotationPitch;
-            reqPriority = Integer.MIN_VALUE;
-            reqYawRate = Math.max(reqYawRate, 20.0D);
-            reqPitchRate = Math.max(reqPitchRate, 20.0D);
-            hasRequest = true;
+            return 0.0F;
         }
-        step(player);
+        if (request == null) {
+            if (state == State.OFF) {
+                return 0.0F;
+            }
+            if (Math.abs(MathHelper.wrapAngleTo180_float(cameraYaw - current.yaw)) < gcd
+                    && Math.abs(cameraPitch - current.pitch) < gcd) {
+                float turns = Math.round((current.yaw - cameraYaw) / 360.0F) * 360.0F;
+                reset(cameraYaw + turns, cameraPitch);
+                return turns;
+            }
+            state = State.RETURNING;
+            committed = null;
+            current = step(tickStart, cameraYaw, cameraPitch, RETURN_RATE, RETURN_RATE, gcd);
+            return 0.0F;
+        }
+        if (state == State.OFF) {
+            // Seed from the live camera so the first step is rate-limited from the real look.
+            tickStart = current = new Look(cameraYaw, cameraPitch, 0.0, 0.0);
+        } else if (committed == null || committed.owner != request.owner) {
+            // A carry belongs to the owner that produced it; a new owner starts on the grid.
+            tickStart = current = new Look(current.yaw, current.pitch, 0.0, 0.0);
+        }
+        state = State.TRACKING;
+        committed = request;
+        current = step(tickStart, request.yaw, request.pitch, request.yawRate, request.pitchRate, gcd);
+        return 0.0F;
+    }
+
+    /**
+     * One tick of turning {@code from} toward (yaw, pitch), rate limited per axis and snapped to whole
+     * mouse counts. Pure: the GCD is a parameter rather than a live settings read, so this is safe to
+     * evaluate speculatively and can be exercised without a client.
+     */
+    static Look step(Look from, float yaw, float pitch, double yawRate, double pitchRate, float gcd) {
+        double yawDiff = MathHelper.wrapAngleTo180_double(yaw - from.yaw - from.yawCarry);
+        double pitchDiff = MathHelper.clamp_float(pitch, -90.0F, 90.0F) - from.pitch - from.pitchCarry;
+        double yawStep = from.yawCarry + MathHelper.clamp_double(yawDiff, -yawRate, yawRate);
+        double pitchStep = from.pitchCarry + MathHelper.clamp_double(pitchDiff, -pitchRate, pitchRate);
+        // Seeded from the camera and stepped in GCD multiples, so the spoof stays on the camera's grid.
+        float appliedYaw = snap((float) yawStep, gcd);
+        float appliedPitch = snap((float) pitchStep, gcd);
+        float newPitch = MathHelper.clamp_float(from.pitch + appliedPitch, -90.0F, 90.0F);
+        // The pitch carry counts what was actually applied, so it cannot wind up against the clamp.
+        return new Look(from.yaw + appliedYaw, newPitch,
+                yawStep - appliedYaw, pitchStep - (newPitch - from.pitch));
+    }
+
+    /** Clears every scrap of spoof state at once, so no carry can outlive a reset. */
+    private void reset(float yaw, float pitch) {
+        state = State.OFF;
+        committed = null;
+        pending = null;
+        current = tickStart = new Look(yaw, pitch, 0.0, 0.0);
+    }
+
+    /** Equal current and previous head yaw avoids interpolation jitter. */
+    private void applyRenderLook(EntityPlayerSP player) {
+        player.rotationYawHead = current.yaw;
+        player.prevRotationYawHead = current.yaw;
+        player.coldplayRenderPitch = current.pitch;
     }
 
     /** The head between the last two ticks' looks, like any other entity's rotation. */
     @EventTarget(priority = EventPriority.DRAIN)
     public void onRender(EventRender event) {
         EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-        if (player == null || !active) {
+        if (player == null || state == State.OFF) {
             return;
         }
         float partialTicks = event.getPartialTicks();
-        float yaw = prevYaw + (serverYaw - prevYaw) * partialTicks;
+        float yaw = tickStart.yaw + (current.yaw - tickStart.yaw) * partialTicks;
         player.rotationYawHead = yaw;
         player.prevRotationYawHead = yaw;
-        player.coldplayRenderPitch = prevPitch + (serverPitch - prevPitch) * partialTicks;
+        player.coldplayRenderPitch = tickStart.pitch + (current.pitch - tickStart.pitch) * partialTicks;
     }
 
     /**
-     * Re-aims this tick's look packet from EventMotion PRE by redoing the tick's step, so the packet still
-     * turns at most one tick's rate. Ignored unless {@code who} won this tick.
+     * Re-aims this tick's look packet from EventMotion PRE by re-deriving the tick's step from the look
+     * it started at, so the packet still turns at most one tick's rate however often this is called.
+     * Ignored unless {@code who} won this tick.
      */
-    public synchronized void reaim(Object who, float yaw, float pitch, double turnRate) {
+    public void reaim(Object who, float yaw, float pitch, double turnRate) {
         EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-        if (!owns(who) || player == null) {
+        if (player == null) {
             return;
         }
-        serverYaw = prevYaw;
-        serverPitch = prevPitch;
-        yawRemainder = prevYawRemainder;
-        pitchRemainder = prevPitchRemainder;
-        reqOwner = who;
-        reqYaw = yaw;
-        reqPitch = pitch;
-        reqYawRate = turnRate;
-        reqPitchRate = turnRate;
-        reqPriority = lastWinPriority;
-        advance(player);
-    }
-
-
-    private void release(EntityPlayerSP player) {
-        // Shift the camera by whole turns so the outgoing yaw stays continuous; nothing visible changes.
-        if (active && player != null) {
-            float turns = Math.round((serverYaw - player.rotationYaw) / 360.0F) * 360.0F;
-            if (turns != 0.0F) {
-                player.rotationYaw += turns;
-                player.prevRotationYaw += turns;
-            }
-        }
-        active = false;
-        yawRemainder = pitchRemainder = 0.0;
-        hasRequest = false;
-        lastOwner = null;
-        lastWinPriority = Integer.MIN_VALUE;
-        if (player != null) {
-            player.coldplayRenderPitch = Float.NaN;
+        if (runReaim(who, yaw, pitch, turnRate, gcdStep())) {
+            applyRenderLook(player);
         }
     }
 
-    private void step(EntityPlayerSP player) {
-        if (!active || reqOwner != lastOwner) {
-            yawRemainder = pitchRemainder = 0.0;
+    /** {@link #reaim} without the player, so the replay can be exercised headlessly. */
+    boolean runReaim(Object who, float yaw, float pitch, double turnRate, float gcd) {
+        if (!owns(who)) {
+            return false;
         }
-        // Seed from the live camera so the first step is rate-limited from the real look.
-        if (!active) {
-            serverYaw = player.rotationYaw;
-            serverPitch = player.rotationPitch;
-            active = true;
-        }
-        prevYaw = serverYaw;
-        prevPitch = serverPitch;
-        prevYawRemainder = yawRemainder;
-        prevPitchRemainder = pitchRemainder;
-        advance(player);
-    }
-
-    private void advance(EntityPlayerSP player) {
-        double yawDiff = MathHelper.wrapAngleTo180_double(reqYaw - serverYaw - yawRemainder);
-        double pitchDiff = MathHelper.clamp_float(reqPitch, -90.0F, 90.0F) - serverPitch - pitchRemainder;
-        double yawStep = yawRemainder + MathHelper.clamp_double(yawDiff, -reqYawRate, reqYawRate);
-        double pitchStep = pitchRemainder + MathHelper.clamp_double(pitchDiff, -reqPitchRate, reqPitchRate);
-        // Seeded from the camera and stepped in GCD multiples, so the spoof stays on the camera's GCD grid.
-        float appliedYaw = gcdSnap((float) yawStep);
-        float appliedPitch = gcdSnap((float) pitchStep);
-        yawRemainder = yawStep - appliedYaw;
-        pitchRemainder = pitchStep - appliedPitch;
-        serverYaw += appliedYaw;
-        serverPitch = MathHelper.clamp_float(serverPitch + appliedPitch, -90.0F, 90.0F);
-
-        // Equal current and previous head yaw avoids interpolation jitter.
-        player.rotationYawHead = serverYaw;
-        player.prevRotationYawHead = serverYaw;
-        player.coldplayRenderPitch = serverPitch;
-
-        if (reqOwner != lastOwner) {
-            MoveFix.resetHysteresis(); // new owner, drop the old movement impulse
-        }
-        lastOwner = reqOwner;
-        lastWinPriority = reqPriority;
-        hasRequest = false;
+        current = step(tickStart, yaw, pitch, turnRate, turnRate, gcd);
+        committed = new Request(who, yaw, pitch, committed.priority, turnRate, turnRate);
+        return true;
     }
 
     @EventTarget(priority = EventPriority.DRAIN)
     public void onStrafe(EventStrafe event) {
         if (isActive()) {
-            event.setYaw(serverYaw);
+            event.setYaw(current.yaw);
         }
     }
 
@@ -350,8 +396,8 @@ public final class RotationManager {
             return;
         }
         if (isActive()) {
-            event.setYaw(serverYaw);
-            event.setPitch(serverPitch);
+            event.setYaw(current.yaw);
+            event.setPitch(current.pitch);
         }
         sentYaw = event.getYaw();
         sentPitch = event.getPitch();
