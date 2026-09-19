@@ -8,6 +8,32 @@ import java.util.Random;
 /**
  * Turn shaping for one rotation producer: a correlated, bursty hand instead of a constant slew.
  * Hold one instance per owner, since the state is the hand's and not the broker's.
+ *
+ * <h3>Per-tick call contract</h3>
+ *
+ * <p>Every tick, a caller must invoke {@link #wander()} first and {@link #step} second, exactly
+ * once each. The two are not independent. {@code holdTicks} couples them: while a rest is running,
+ * {@code wander()} freezes and draws no randomness at all, and {@code step} re-requests the look
+ * the broker already holds, so the wire look repeats exactly the way it does when a real hand is
+ * off the mouse. Calling them out of order, twice, or only one of them pulls the rest apart from
+ * the drift and the result stops reading as a hand.
+ *
+ * <p>{@link #retarget()} begins a new acquisition and samples the burst length <em>before</em> the
+ * pace. {@link #reset()} samples nothing.
+ *
+ * <h3>The three knobs worth knowing</h3>
+ *
+ * <ul>
+ *   <li>{@code ACCEL} / {@code DECEL} - the turn curve: how hard the hand gets moving, and how
+ *       early it starts braking.</li>
+ *   <li>the gain walks ({@code GAIN_*} and {@code SOLO_*}) - per-tick speed variation. This is
+ *       what makes two turns over the same distance take different amounts of time.</li>
+ *   <li>the drift walks ({@code DRIFT_*}) - where on the hitbox the aim point wanders.</li>
+ * </ul>
+ *
+ * <p><b>Changing the number or the order of RNG draws is a breaking change.</b> The hand profile
+ * check pins the exact output values as well as the draw order and count per call, so moving a
+ * sample fails the checks even when the maths is equivalent.
  */
 public final class HandProfile {
 
@@ -99,14 +125,21 @@ public final class HandProfile {
         holdTicks = moveTicks = 0;
     }
 
-    /** A new target is turned to from rest, at its own pace. */
+    /**
+     * A new target is turned to from rest, at its own pace. The burst length is drawn before the
+     * pace, and that order is pinned by the checks.
+     */
     public void retarget() {
         reset();
         moveTicks = burst(MOVE_CONTINUE, MOVE_MAX);
         pace = random.nextDouble();
     }
 
-    /** Steps the wander walk. A resting hand does not wander either, so the offsets freeze with it. */
+    /**
+     * Steps the wander walk. Call this once per tick, before {@link #step}. A resting hand does not
+     * wander either, so while {@code holdTicks} is running the offsets freeze and no randomness is
+     * drawn at all.
+     */
     public Wander wander() {
         if (holdTicks <= 0) {
             driftHand = walk(driftHand, DRIFT_PULL, DRIFT_STEP, DRIFT_CLAMP);
@@ -118,8 +151,10 @@ public final class HandProfile {
     }
 
     /**
-     * One tick of turn shaping. {@code onTarget} says whether freezing here would still be aimed at
-     * the goal, since a hand only rests once it is already pointed at something.
+     * One tick of turn shaping. Call this once per tick, after {@link #wander()}.
+     *
+     * <p>{@code onTarget} says whether freezing here would still be aimed at the goal, since a hand
+     * only rests once it is already pointed at something.
      */
     public Step step(float fromYaw, float fromPitch, float wantYaw, float wantPitch, boolean onTarget) {
         if (holdTicks > 0 && !onTarget) {
