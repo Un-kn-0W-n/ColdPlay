@@ -576,9 +576,8 @@ public class PlayerControllerMP
      */
     public ItemStack windowClick(int windowId, int slotId, int mouseButtonClicked, int mode, EntityPlayer playerIn)
     {
-        // ColdPlay >>> InvMove Hypixel click gate, manual click record
-        if (playerIn.openContainer.windowId != windowId
-                || coldplay.module.movement.InvMove.deferClick(playerIn, windowId, slotId, mouseButtonClicked, mode)) return null;
+        // ColdPlay >>> stale window guard, manual click record
+        if (playerIn.openContainer.windowId != windowId) return null;
         coldplay.broker.InventoryTransactions.getInstance().manual();
         // ColdPlay <<<
         return windowClick(windowId, slotId, mouseButtonClicked, mode, playerIn, false);
@@ -588,8 +587,6 @@ public class PlayerControllerMP
     public boolean automatedWindowClick(int windowId, int slotId, int button, int mode, EntityPlayer playerIn)
     {
         if (playerIn.openContainer.windowId != windowId
-                || coldplay.module.movement.InvMove.isInputPaused(this.mc.currentScreen)
-                || coldplay.module.movement.InvMove.holdsAutomation(playerIn)
                 || !coldplay.broker.InventoryTransactions.getInstance().canClick(playerIn.openContainer, slotId, button, mode))
             return false;
         windowClick(windowId, slotId, button, mode, playerIn, true);

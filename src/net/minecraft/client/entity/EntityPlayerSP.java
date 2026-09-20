@@ -306,7 +306,6 @@ public class EntityPlayerSP extends AbstractClientPlayer {
 	 */
 	@Override
 	public void closeScreen() {
-		if (coldplay.module.movement.InvMove.deferClose(this)) return;
 		this.sendQueue.addToSendQueue(new C0DPacketCloseWindow(this.openContainer.windowId));
 		this.closeScreenAndDropStack();
 	}
