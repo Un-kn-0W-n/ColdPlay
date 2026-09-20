@@ -1,120 +1,122 @@
 package coldplay.module.utility;
 
-import coldplay.event.EventAttack;
+import coldplay.broker.SlotGuard;
 import coldplay.event.EventDig;
+import coldplay.event.EventPreAttack;
 import coldplay.event.EventTarget;
 import coldplay.event.EventUpdate;
 import coldplay.module.Category;
 import coldplay.module.Module;
 import coldplay.setting.BooleanSetting;
 import coldplay.util.ItemUtil;
-import coldplay.broker.SlotGuard;
+import coldplay.util.ResourcePriority;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.MovingObjectPosition;
+import net.minecraft.world.WorldSettings;
 
 import java.util.function.ToDoubleFunction;
 
 public class AutoTool extends Module {
-    private static final int HOLD_TICKS = 5; // outlasts vanilla's blockHitDelay and a jitter click gap
 
-    private final BooleanSetting tools = add(new BooleanSetting("Tools", true).describe("Swap to the fastest tool when breaking blocks outside creative mode."));
-    private final BooleanSetting weapons = add(new BooleanSetting("Weapons", true).describe("Swap to the strongest weapon when attacking entities."));
-    private final BooleanSetting switchBack = add(new BooleanSetting("SwitchBack", true).describe("Return to your previous slot once you stop mining/attacking."));
+    private static final int DIG_HOLD_TICKS = 5;
+    private static final int ATTACK_HOLD_TICKS = 20;
+    private static final int PRIORITY = ResourcePriority.BACKGROUND;
 
-    private int lastActionTick = Integer.MIN_VALUE;
+    private final BooleanSetting tools = add(new BooleanSetting("Tools", true)
+            .describe("Swap to the fastest tool when breaking blocks outside creative mode."));
+    private final BooleanSetting weapons = add(new BooleanSetting("Weapons", true)
+            .describe("Swap to the strongest weapon when attacking entities."));
+    private final BooleanSetting switchBack = add(new BooleanSetting("SwitchBack", true)
+            .describe("Return to your previous slot once you stop mining/attacking."));
+
+    private int holdTicks;
 
     public AutoTool() {
-        super("AutoTool", Category.UTILITY, "Auto-switches to the best tool for mining outside creative mode and the best weapon for attacking in any mode.");
+        super("AutoTool", Category.UTILITY,
+                "Auto-switches to the best tool for mining outside creative mode and the best weapon for attacking in any mode.");
     }
 
     @Override
     protected void onDisable() {
-        stop();
+        release();
     }
 
     @EventTarget
     public void onDig(EventDig event) {
         Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.thePlayer;
-        if (player == null || mc.theWorld == null || mc.playerController == null || !tools.get()) {
+        if (!tools.get() || !canAct(mc) || mc.playerController.getCurrentGameType() != WorldSettings.GameType.SURVIVAL) {
             return;
         }
-        // Creative mining is instant, so only the Tools half skips it.
-        if (mc.playerController.isInCreativeMode()) {
-            return;
-        }
+        // The dig funnel can outlive the chunk, and an unloaded block reads as air.
         Block block = mc.theWorld.getBlockState(event.getPos()).getBlock();
         if (block.getMaterial() != Material.air) {
-            lastActionTick = player.ticksExisted;
-            switchToBest(player, stack -> ItemUtil.miningScore(stack, block));
+            hold(mc.thePlayer, stack -> ItemUtil.miningScore(stack, block), DIG_HOLD_TICKS);
         }
     }
 
     @EventTarget
-    public void onAttack(EventAttack event) {
-        EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-        if (player != null && weapons.get() && isEntityHit(event.getTarget())) {
-            lastActionTick = player.ticksExisted;
-            switchToBest(player, ItemUtil::meleeDamage);
+    public void onAttack(EventPreAttack event) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (weapons.get() && canAct(mc) && !mc.playerController.isSpectator()
+                && event.getTarget() instanceof EntityLivingBase) {
+            hold(mc.thePlayer, ItemUtil::meleeDamage, ATTACK_HOLD_TICKS);
         }
     }
 
     @EventTarget
     public void onUpdate(EventUpdate event) {
+        // Session and world changes are SlotGuard's to clean up; it has already run at BROKER_RESET.
         if (!event.isPre()) {
             return;
         }
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.thePlayer;
-        if (player == null) {
-            stop();
-            return;
+        if (!SlotGuard.getInstance().isHeldBy(this)) {
+            holdTicks = 0;
+        } else if (holdTicks > 0 && --holdTicks == 0) {
+            release();
         }
-        if ((mc.playerController != null && mc.playerController.getIsHittingBlock())
-                || player.isUsingItem() // any C09 kills a sword block server-side
-                || mc.currentScreen != null // vanilla cannot change the slot under a GUI
-                || player.ticksExisted <= lastActionTick + HOLD_TICKS) {
-            return;
-        }
-        stop();
     }
 
-    private static boolean isEntityHit(MovingObjectPosition mov) {
-        return mov != null && mov.typeOfHit == MovingObjectPosition.MovingObjectType.ENTITY;
+    private static boolean canAct(Minecraft mc) {
+        return mc.thePlayer != null && mc.theWorld != null && mc.playerController != null;
     }
 
-    private void switchToBest(EntityPlayerSP player, ToDoubleFunction<ItemStack> scorer) {
-        int currentSlot = player.inventory.currentItem;
-        double currentScore = scorer.applyAsDouble(player.inventory.mainInventory[currentSlot]);
-        int bestSlot = currentSlot;
-        double bestScore = currentScore;
+    private void hold(EntityPlayerSP player, ToDoubleFunction<ItemStack> scorer, int holdFor) {
+        int current = player.inventory.currentItem;
+        int best = bestSlot(player, scorer);
+        SlotGuard guard = SlotGuard.getInstance();
+        // Never claim the slot the player chose themselves: releasing it would drag them off it.
+        boolean held = best == current ? guard.isHeldBy(this) : guard.request(this, best, PRIORITY);
+        if (held) {
+            holdTicks = holdFor;
+        }
+    }
+
+    private static int bestSlot(EntityPlayerSP player, ToDoubleFunction<ItemStack> scorer) {
+        ItemStack[] hotbar = player.inventory.mainInventory;
+        int best = player.inventory.currentItem;
+        double bestScore = scorer.applyAsDouble(hotbar[best]);
         for (int slot = 0; slot < 9; slot++) {
-            double score = scorer.applyAsDouble(player.inventory.mainInventory[slot]);
-            if (score > bestScore) {
+            double score = scorer.applyAsDouble(hotbar[slot]);
+            if (score > bestScore) { // strict, so a tie leaves the player where they are
                 bestScore = score;
-                bestSlot = slot;
+                best = slot;
             }
         }
-        if (bestSlot != currentSlot) { // strictly better only, avoids churning the held item
-            SlotGuard.getInstance().request(this, bestSlot);
-        }
+        return best;
     }
 
-    private void stop() {
+    private void release() {
+        holdTicks = 0;
         SlotGuard guard = SlotGuard.getInstance();
-        if (!guard.isHeldBy(this)) {
-            return;
-        }
-        EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-        if (switchBack.get() && (player == null || !player.isUsingItem())) {
-            guard.release(this);
+        if (switchBack.get()) {
+            guard.releaseWhenSafe(this);
         } else {
-            guard.relinquish(this); // restoring mid sword-block would cancel the block
+            guard.relinquish(this);
         }
     }
 }

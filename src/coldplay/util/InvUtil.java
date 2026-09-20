@@ -101,7 +101,8 @@ public final class InvUtil {
         return Math.sqrt(dx * dx + dy * dy);
     }
 
-    // Delay scales with the distance of the upcoming move.
+    // Delay scales with the distance of the upcoming move. hi is not a hard cap: the ramp has a
+    // floor of MIN_RAMP_MS and jitter/hesitation land on top, so even a narrow [lo, hi] stays varied.
     public static long moveDelayMs(final double lo, final double hi, final Container c, final int from, final int to) {
         return moveDelayMs(lo, hi, slotDistance(slotByNumber(c, from), slotByNumber(c, to)));
     }
