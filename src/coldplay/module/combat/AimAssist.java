@@ -27,6 +27,8 @@ public class AimAssist extends Module {
     public final BooleanSetting animals = add(new BooleanSetting("Animals", false).describe("Aim at passive animals."));
     public final BooleanSetting invisible = add(new BooleanSetting("Invisible", false).describe("Also aim at invisible entities."));
     public final BooleanSetting npcs = add(new BooleanSetting("NPCs", false).describe("Also aim at NPCs (villagers and fake players)."));
+    public final BooleanSetting throughBlocks = add(new BooleanSetting("Through Blocks", false)
+            .describe("Aim at targets behind cover. Off: a target only counts while some part of it is visible."));
     public final NumberSetting range = add(new NumberSetting("Range", 4.0, 1.0, 6.0, 0.1).describe("Max distance to a target, in blocks."));
     public final NumberSetting fov = add(new NumberSetting("FOV", 90.0, 1.0, 180.0, 1.0).describe("Only aim at targets within this view cone (degrees)."));
     public final ModeSetting level = add(new ModeSetting("Level", NORMAL, MINIMAL, NORMAL, AGGRESSIVE).describe("Turn speed: Minimal glides, Normal is standard, Aggressive snaps."));
@@ -108,7 +110,7 @@ public class AimAssist extends Module {
 
     private CombatManager.Filters filters() {
         return new CombatManager.Filters(players.get(), mobs.get(), animals.get(), invisible.get(), npcs.get(),
-                range.get(), fov.get(), false, false);
+                range.get(), fov.get(), false, !throughBlocks.get());
     }
 
 }

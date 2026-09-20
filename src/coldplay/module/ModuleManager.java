@@ -80,14 +80,13 @@ public class ModuleManager {
         register(new coldplay.module.visual.ArmorStatus(hudState));
         register(new coldplay.module.visual.Mirror(hudState));
         register(new coldplay.module.visual.Trajectory());
-        coldplay.module.utility.InvManager invManager = new coldplay.module.utility.InvManager();
-        register(new coldplay.module.utility.ChestStealer(invManager::autoCloses));
+        register(new coldplay.module.utility.ChestStealer());
         register(new coldplay.module.utility.AutoTool());
         register(new coldplay.module.utility.FastPlace());
         register(new coldplay.module.utility.BedProtection());
         register(new coldplay.module.utility.BedNotification());
         register(new coldplay.module.utility.MiddleClickFriend(persistence));
-        register(invManager);
+        register(new coldplay.module.utility.InvManager());
         register(new coldplay.module.utility.HumanRecorder(hudState));
         register(new coldplay.module.utility.PacketLogger(clientVersion,
                 () -> new coldplay.config.ConfigCodec().encodeProfile(this).toString()));

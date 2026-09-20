@@ -22,14 +22,14 @@ import java.util.function.ToDoubleFunction;
 public class AutoTool extends Module {
     private static final int HOLD_TICKS = 5; // outlasts vanilla's blockHitDelay and a jitter click gap
 
-    private final BooleanSetting tools = add(new BooleanSetting("Tools", true).describe("Swap to the fastest tool when breaking blocks."));
+    private final BooleanSetting tools = add(new BooleanSetting("Tools", true).describe("Swap to the fastest tool when breaking blocks outside creative mode."));
     private final BooleanSetting weapons = add(new BooleanSetting("Weapons", true).describe("Swap to the strongest weapon when attacking entities."));
     private final BooleanSetting switchBack = add(new BooleanSetting("SwitchBack", true).describe("Return to your previous slot once you stop mining/attacking."));
 
     private int lastActionTick = Integer.MIN_VALUE;
 
     public AutoTool() {
-        super("AutoTool", Category.UTILITY, "Auto-switches to the best tool for mining and the best weapon for attacking.");
+        super("AutoTool", Category.UTILITY, "Auto-switches to the best tool for mining outside creative mode and the best weapon for attacking in any mode.");
     }
 
     @Override
@@ -40,8 +40,12 @@ public class AutoTool extends Module {
     @EventTarget
     public void onDig(EventDig event) {
         Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = validPlayer(mc);
-        if (player == null || mc.theWorld == null || !tools.get()) {
+        EntityPlayerSP player = mc.thePlayer;
+        if (player == null || mc.theWorld == null || mc.playerController == null || !tools.get()) {
+            return;
+        }
+        // Creative mining is instant, so only the Tools half skips it.
+        if (mc.playerController.isInCreativeMode()) {
             return;
         }
         Block block = mc.theWorld.getBlockState(event.getPos()).getBlock();
@@ -53,7 +57,7 @@ public class AutoTool extends Module {
 
     @EventTarget
     public void onAttack(EventAttack event) {
-        EntityPlayerSP player = validPlayer(Minecraft.getMinecraft());
+        EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
         if (player != null && weapons.get() && isEntityHit(event.getTarget())) {
             lastActionTick = player.ticksExisted;
             switchToBest(player, ItemUtil::meleeDamage);
@@ -66,7 +70,7 @@ public class AutoTool extends Module {
             return;
         }
         Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = validPlayer(mc);
+        EntityPlayerSP player = mc.thePlayer;
         if (player == null) {
             stop();
             return;
@@ -78,11 +82,6 @@ public class AutoTool extends Module {
             return;
         }
         stop();
-    }
-
-    private static EntityPlayerSP validPlayer(Minecraft mc) {
-        EntityPlayerSP player = mc.thePlayer;
-        return (player == null || player.capabilities.isCreativeMode) ? null : player;
     }
 
     private static boolean isEntityHit(MovingObjectPosition mov) {
