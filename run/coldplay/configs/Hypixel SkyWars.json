@@ -373,6 +373,7 @@
           95.0,
           130.0
         ],
+        "Auto Close": true,
         "Auto Off": false
       }
     },

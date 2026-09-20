@@ -7,6 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.RotationMath;
 import net.minecraft.util.Vec3;
 import net.minecraft.world.World;
@@ -15,6 +16,9 @@ public final class CombatManager {
 
     public static final String PRIORITY_HEALTH = "Health";
     public static final String PRIORITY_DISTANCE = "Distance";
+
+    /** How far off the hitbox faces the visibility samples sit, in blocks. */
+    private static final double VISIBILITY_INSET = 0.05;
 
     private static final CombatManager INSTANCE = new CombatManager();
 
@@ -99,6 +103,12 @@ public final class CombatManager {
         return best;
     }
 
+    /**
+     * True while any part of the entity is visible from our eyes, not just its middle. The cheap eye-to-eye
+     * and eye-to-centre rays answer the common cases first; only when both are blocked do we sample the
+     * hitbox itself, so a target that is merely half covered - a head over a wall, legs under an overhang,
+     * a shoulder past a corner - still counts as seen instead of being dropped like a fully hidden one.
+     */
     public boolean canSee(EntityPlayerSP player, Entity entity) {
         World world = Minecraft.getMinecraft().theWorld;
         if (world == null) {
@@ -108,8 +118,35 @@ public final class CombatManager {
             return true;
         }
         Vec3 eyes = player.getPositionEyes(1.0F);
-        Vec3 centre = new Vec3(entity.posX, entity.posY + entity.height / 2.0, entity.posZ);
-        return world.rayTraceBlocks(eyes, centre) == null;
+        if (reaches(world, eyes, entity.posX, entity.posY + entity.height / 2.0, entity.posZ)) {
+            return true;
+        }
+        AxisAlignedBB box = entity.getEntityBoundingBox();
+        // Pull the samples off the faces, or a target flush against a wall would sample inside that wall.
+        double insetX = Math.min(VISIBILITY_INSET, (box.maxX - box.minX) / 4.0);
+        double insetY = Math.min(VISIBILITY_INSET, (box.maxY - box.minY) / 4.0);
+        double insetZ = Math.min(VISIBILITY_INSET, (box.maxZ - box.minZ) / 4.0);
+        double[] xs = {box.minX + insetX, (box.minX + box.maxX) / 2.0, box.maxX - insetX};
+        double[] zs = {box.minZ + insetZ, (box.minZ + box.maxZ) / 2.0, box.maxZ - insetZ};
+        double[] ys = {box.maxY - insetY, (box.minY + box.maxY) / 2.0, box.minY + insetY};
+        for (int k = 0; k < ys.length; k++) {
+            for (int i = 0; i < xs.length; i++) {
+                for (int j = 0; j < zs.length; j++) {
+                    // Dead centre of the box is the ray we already cast above.
+                    if (i == 1 && j == 1 && k == 1) {
+                        continue;
+                    }
+                    if (reaches(world, eyes, xs[i], ys[k], zs[j])) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean reaches(World world, Vec3 eyes, double x, double y, double z) {
+        return world.rayTraceBlocks(eyes, new Vec3(x, y, z)) == null;
     }
 
     public float angularOffset(EntityPlayerSP player, Entity entity) {

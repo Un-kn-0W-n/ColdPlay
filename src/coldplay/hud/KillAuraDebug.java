@@ -5,7 +5,6 @@ import coldplay.event.EventRender2D;
 import coldplay.event.EventTarget;
 import coldplay.gui.Theme;
 import coldplay.setting.NumberSetting;
-import coldplay.setting.RangeSetting;
 import coldplay.util.RenderUtil;
 import coldplay.util.font.CustomFont;
 import coldplay.util.font.Fonts;
@@ -21,7 +20,14 @@ import org.lwjgl.opengl.GL11;
 
 import java.util.function.BooleanSupplier;
 
-/** Rotation broker history and aim tracer rendering. */
+/**
+ * Rotation broker history and aim tracer rendering.
+ *
+ * <p>The camera and the wire look are kept as separate series rather than one series that switches
+ * source when the broker takes over. A single switching line cannot answer the only question this
+ * graph is for - does the spoofed turn look like the hand turn - because it never shows both at
+ * once, and it draws a false step at the handoff where the two sources meet.
+ */
 public final class KillAuraDebug {
     private static final double MARKER_HALF = 0.05;
     private static final int GRAPH_TICKS = 200;
@@ -29,13 +35,17 @@ public final class KillAuraDebug {
     private static final int GRAPH_PAD = 4;
     private static final int GRAPH_GAP = 2;
     private static final int COLOR_AXIS = 0xFF3A3A44;
+    private static final int COLOR_CAMERA = 0xFF6E7785;
     private static final int COLOR_YAW = 0xFF5FB3FF;
     private static final int COLOR_PITCH = 0xFFFFB454;
     private static final int COLOR_YAW_RATE = 0xFF7FE38C;
     private static final int COLOR_PITCH_RATE = 0xFFE58CFF;
     private final NumberSetting graphScale;
-    private final RangeSetting yawSpeed;
-    private final RangeSetting pitchSpeed;
+    private final NumberSetting rotationSpeed;
+    /** What the player's own hand is doing, every tick, whether or not the broker is spoofing. */
+    private final float[] cameraYaw = new float[GRAPH_TICKS];
+    private final float[] cameraPitch = new float[GRAPH_TICKS];
+    /** What is actually going out on the wire; equal to the camera while the broker is off. */
     private final float[] brokerYaw = new float[GRAPH_TICKS];
     private final float[] brokerPitch = new float[GRAPH_TICKS];
     private final float[] yawRates = new float[GRAPH_TICKS];
@@ -43,10 +53,9 @@ public final class KillAuraDebug {
     private int graphHead;
     private int graphCount;
 
-    public KillAuraDebug(NumberSetting graphScale, RangeSetting yawSpeed, RangeSetting pitchSpeed) {
+    public KillAuraDebug(NumberSetting graphScale, NumberSetting rotationSpeed) {
         this.graphScale = graphScale;
-        this.yawSpeed = yawSpeed;
-        this.pitchSpeed = pitchSpeed;
+        this.rotationSpeed = rotationSpeed;
     }
 
     public Object graph(HudState hud, BooleanSupplier visible) {
@@ -66,13 +75,20 @@ public final class KillAuraDebug {
     }
 
     /**
-     * Records one tick of broker state for the graph. This must stay purely passive: no randomness,
-     * no state that the aim reads back. The passive-diagnostics check asserts that toggling the
-     * Render setting changes neither the aim progression nor the combat randomness, so a sample
-     * taken here can never be allowed to consume a draw.
+     * Records one tick of camera and broker state for the graph. Call this after the broker has
+     * stepped, so both series describe the same tick.
+     *
+     * <p>This must stay purely passive: no randomness, no state that the aim reads back. The
+     * passive-diagnostics check asserts that toggling the Render setting changes neither the aim
+     * progression nor the combat randomness, so a sample taken here can never be allowed to
+     * consume a draw.
      */
     public void sample(EntityPlayerSP player, double yawRate, double pitchRate) {
         RotationManager rm = RotationManager.getInstance();
+        cameraYaw[graphHead] = player.rotationYaw;
+        cameraPitch[graphHead] = player.rotationPitch;
+        // While the broker is off the wire genuinely carries the camera, so the two series being
+        // identical there is the truth rather than a placeholder.
         brokerYaw[graphHead] = rm.isActive() ? rm.getServerYaw() : player.rotationYaw;
         brokerPitch[graphHead] = rm.isActive() ? rm.getServerPitch() : player.rotationPitch;
         yawRates[graphHead] = (float) yawRate;
@@ -93,7 +109,7 @@ public final class KillAuraDebug {
         CustomFont font = Fonts.list;
         int textH = font.getHeight();
         int panelW = GRAPH_PAD * 2 + GRAPH_TICKS;
-        int panelH = GRAPH_PAD * 2 + textH * 2 + GRAPH_PLOT_H * 2 + GRAPH_GAP * 3;
+        int panelH = GRAPH_PAD * 2 + textH * 2 + GRAPH_PLOT_H * 3 + GRAPH_GAP * 4;
         HudState.Position pos = hud.getOrCreate("RotationGraph",
                 resolution.getScaledWidth() - panelW - GRAPH_PAD, GRAPH_PAD,
                 resolution.getScaledWidth(), resolution.getScaledHeight());
@@ -106,25 +122,31 @@ public final class KillAuraDebug {
 
         int x0 = left + GRAPH_PAD;
         int legendY = top + GRAPH_PAD;
-        int deltaTop = legendY + textH + GRAPH_GAP;
-        int rateTop = deltaTop + GRAPH_PLOT_H + GRAPH_GAP;
+        int yawTop = legendY + textH + GRAPH_GAP;
+        int pitchTop = yawTop + GRAPH_PLOT_H + GRAPH_GAP;
+        int rateTop = pitchTop + GRAPH_PLOT_H + GRAPH_GAP;
         int valuesY = rateTop + GRAPH_PLOT_H + GRAPH_GAP;
-        RenderUtil.hLine(x0, x0 + GRAPH_TICKS, deltaTop + GRAPH_PLOT_H / 2, COLOR_AXIS);
+        RenderUtil.hLine(x0, x0 + GRAPH_TICKS, yawTop + GRAPH_PLOT_H / 2, COLOR_AXIS);
+        RenderUtil.hLine(x0, x0 + GRAPH_TICKS, pitchTop + GRAPH_PLOT_H / 2, COLOR_AXIS);
         RenderUtil.hLine(x0, x0 + GRAPH_TICKS, rateTop + GRAPH_PLOT_H - 1, COLOR_AXIS);
 
-        double m = Math.max(yawSpeed.getHi(), pitchSpeed.getHi());
+        double m = Math.max(rotationSpeed.get(), 1.0);
         GlStateManager.enableBlend();
         GlStateManager.disableTexture2D();
         GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
-        plot(brokerYaw, true, true, x0, deltaTop, m, COLOR_YAW);
-        plot(brokerPitch, true, false, x0, deltaTop, m, COLOR_PITCH);
+        // Camera first, so the spoofed trace is drawn over the hand it is meant to resemble.
+        plot(cameraYaw, true, true, x0, yawTop, m, COLOR_CAMERA);
+        plot(brokerYaw, true, true, x0, yawTop, m, COLOR_YAW);
+        plot(cameraPitch, true, false, x0, pitchTop, m, COLOR_CAMERA);
+        plot(brokerPitch, true, false, x0, pitchTop, m, COLOR_PITCH);
         plot(yawRates, false, false, x0, rateTop, m, COLOR_YAW_RATE);
         plot(pitchRates, false, false, x0, rateTop, m, COLOR_PITCH_RATE);
         GlStateManager.enableTexture2D();
 
-        int lx = label(font, "yaw", x0, legendY, COLOR_YAW);
+        int lx = label(font, "camera", x0, legendY, COLOR_CAMERA);
+        lx = label(font, "yaw", lx, legendY, COLOR_YAW);
         lx = label(font, "pitch", lx, legendY, COLOR_PITCH);
-        lx = label(font, "yaw rate", lx, legendY, COLOR_YAW_RATE);
+        lx = label(font, "rate", lx, legendY, COLOR_YAW_RATE);
         label(font, "pitch rate", lx, legendY, COLOR_PITCH_RATE);
 
         int last = (graphHead + GRAPH_TICKS - 1) % GRAPH_TICKS;

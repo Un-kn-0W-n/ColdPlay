@@ -19,8 +19,10 @@ import coldplay.broker.PacketLog;
 import coldplay.broker.PlayerPacketState;
 import coldplay.broker.SlotGuard;
 import coldplay.broker.CombatManager;
+import coldplay.util.AimShaper;
+import coldplay.util.ClickRhythm;
 import coldplay.util.CpsDelay;
-import coldplay.util.HandProfile;
+import coldplay.util.HumanLimits;
 import coldplay.util.RenderUtil;
 import coldplay.broker.RotationManager;
 import coldplay.util.ResourcePriority;
@@ -52,12 +54,21 @@ public class KillAura extends Module {
     public final ModeSetting lock = add(new ModeSetting("Lock", SINGLE, SINGLE, SWITCH)
             .describe("Single: hold one target until it leaves range or FOV. Switch: re-pick the best target every tick."));
     private final HeaderSetting rotationsHeader = add(new HeaderSetting("Rotations"));
-    public final RangeSetting rotationSpeed = add(new RangeSetting("Rotation Speed", 18.0, 22.0, 1.0, 180.0, 0.5)
-            .describe("Baseline yaw speed in degrees per tick, before the per-tick hand gain, which both slows and "
-                    + "flicks around it. A pace within the range is chosen per target; slider changes apply immediately."));
-    public final RangeSetting pitchSpeed = add(new RangeSetting("Pitch Speed", 18.0, 22.0, 1.0, 180.0, 0.5)
-            .describe("Baseline pitch speed in degrees per tick, using the same relative pace and the same hand gain "
-                    + "as yaw. Slider changes apply immediately."));
+    public final NumberSetting rotationSpeed = add(new NumberSetting("Rotation Speed", 20.0, 1.0, 180.0, 0.5)
+            .describe("Ceiling on the turn, in degrees per tick. With Humanize on this is the fastest the turn may "
+                    + "go rather than the speed it holds, and it is itself capped at " + (int) HumanLimits.TURN_RATE
+                    + " deg/tick however high this is set; with it off the turn simply runs at this speed. "
+                    + "Slider changes apply immediately."));
+    public final BooleanSetting humanize = add(new BooleanSetting("Humanize", true)
+            .describe("Shape the turn like a hand and keep every number inside what a hand can do. Shaping: "
+                    + "accelerate and brake, vary the speed tick to tick, carry pitch slower than yaw, wander the "
+                    + "aim point around the hitbox, throw past a distant target and correct back, pause briefly "
+                    + "once settled. Limits: turn no faster than " + (int) HumanLimits.TURN_RATE + " deg/tick, "
+                    + "reach no further than " + HumanLimits.REACH + " blocks including any Reach bonus, click no "
+                    + "faster than " + (int) HumanLimits.CPS_MAX + " CPS and never at one fixed cadence, wait a "
+                    + "reaction before turning to a new target, and swing on the beat even when the ray misses "
+                    + "rather than only ever landing hits. Off: none of this applies and the settings are used "
+                    + "exactly as configured, which is faster and trivial to spot."));
     public final NumberSetting rotationRange = add(new NumberSetting("Rotation Range", 5.0, 1.0, 8.0, 0.1)
             .describe("Start aiming at targets within this distance (blocks); attacking still waits for Attack Range."));
     public final NumberSetting fov = add(new NumberSetting("FOV", 90.0, 10.0, 360.0, 1.0).describe("Only target within this view cone (degrees)."));
@@ -73,7 +84,8 @@ public class KillAura extends Module {
     private final HeaderSetting debugHeader = add(new HeaderSetting("Debug"));
     public final BooleanSetting render = add(new BooleanSetting("Render", false)
             .describe("Draw the aim raytrace: a line from your eyes to the targeted spot, marked with a tenth-of-a-block box, "
-                    + "plus a HUD graph of the broker yaw/pitch per tick and the turn rates (drag it in the HUD editor)."));
+                    + "plus a HUD graph comparing your camera against the broker look per tick and the turn rates "
+                    + "(drag it in the HUD editor)."));
     private final NumberSetting graphScale = add(HudState.scaleSetting("Graph Scale"));
 
     // ---- State ----
@@ -81,17 +93,27 @@ public class KillAura extends Module {
     /** The entity we are fighting. Null means idle; see the three stop paths in the class doc. */
     private Entity target;
     private final Random random = new Random();
-    private final HandProfile hand = new HandProfile(rotationSpeed, pitchSpeed);
+    /** Turn shaping. Shares {@link #random} so a seeded aura replays exactly, graph or no graph. */
+    private final AimShaper shaper = new AimShaper(random);
+    /** Inter-click gaps with a hand's distribution. Shares {@link #random} for seeded replay. */
+    private final ClickRhythm rhythm = new ClickRhythm(random);
     /** Earliest time the next attack may go out, in ms. Advanced through {@link #nextDeadline}. */
     private long nextClickAt;
+    /**
+     * Earliest time the hand may act on the current target, in ms. Set whenever the target's
+     * identity changes, so a newly acquired one is not already being tracked the tick it appears.
+     */
+    private long reactionAt;
     /** Last time the target was actually visible, for the wall grace below. */
     private long lastSeenAt;
-    /** Mirrors of the last {@link HandProfile.Step}, used only by the broker and the debug graph. */
-    private double yawRate, pitchRate;
-
-    private HandProfile.Wander wander = HandProfile.REST;
+    /** The rates handed to the broker last tick; used only by the debug graph. */
+    private double turnRate, pitchRate;
+    /** This tick's aim-point offset, shared by the aim and the tracer so they cannot disagree. */
+    private AimShaper.Drift drift = AimShaper.REST;
     /** The target the hand is currently acquiring; a change here restarts the turn from rest. */
     private Entity aimTarget;
+    /** Whether {@link #shaper} is currently primed; toggling Humanize mid-fight restarts it. */
+    private boolean shaping;
 
     /** How long a target stays ours after it breaks line of sight. */
     private static final long WALL_GRACE_MS = 500;
@@ -99,7 +121,7 @@ public class KillAura extends Module {
     private static final double AIM_INSET = 0.05;
     /** Fraction of the hitbox's angular size that still counts as "on target" for a rest. */
     private static final double HOLD_MARGIN = 0.9;
-    private final KillAuraDebug debug = new KillAuraDebug(graphScale, rotationSpeed, pitchSpeed);
+    private final KillAuraDebug debug = new KillAuraDebug(graphScale, rotationSpeed);
 
     // ---- Construction and lifecycle ----
 
@@ -116,7 +138,6 @@ public class KillAura extends Module {
     public KillAura() {
         super("KillAura", Category.COMBAT,
                 "Silently turns toward the nearest target: camera stays put, the look is sent to the server and shown in third person.");
-        rotationSpeed.label("Yaw Speed");
         invisible.label("Invisibles");
         range.label("Attack Range");
         addAutoOff();
@@ -126,6 +147,8 @@ public class KillAura extends Module {
     protected void onEnable() {
         nextClickAt = 0L;
         lastSeenAt = 0L;
+        reactionAt = 0L;
+        rhythm.reset();
         resetAim();
     }
 
@@ -157,9 +180,6 @@ public class KillAura extends Module {
             clearTarget();
             return;
         }
-        if (render.get()) {
-            debug.sample(player, yawRate, pitchRate);
-        }
         if (mc.theWorld == null || GameStateTracker.getInstance().isCombatInactive()) {
             clearTarget();
             return;
@@ -189,36 +209,85 @@ public class KillAura extends Module {
         if (SWITCH.equals(lock.get()) || lost) {
             Entity picked = cm.acquire(player, f, priority.get());
             if (picked != null || lost) {
+                if (picked != target) {
+                    // Nobody is already pointed at something they have not noticed yet. Without a
+                    // latency here every acquisition and every Switch re-pick starts turning on the
+                    // very tick the target became eligible, and a reaction time of zero is not a
+                    // borderline reading - it is a value no session in any training set contains.
+                    reactionAt = picked == null ? 0L : now + HumanLimits.reactionMs(random);
+                }
                 target = picked;
                 lastSeenAt = now;
             }
         }
     }
 
+    /** Whether the hand has finished reacting and may turn to or hit the current target. */
+    private boolean reacted(long now) {
+        return !humanize.get() || now >= reactionAt;
+    }
+
     private void attemptAttack(Minecraft mc, EntityPlayerSP player, long now) {
+        if (now < nextClickAt || !reacted(now)) {
+            return;
+        }
         PlayerPacketState packets = player.sendQueue.getNetworkManager().getPlayerPackets();
         PlayerPacketState.Pose pose = packets.getPose();
-        if (now >= nextClickAt && clearToAttack(player, target, pose)
-                && ActionGuard.getInstance().tryReserve(this)) {
-            Entity victim = target;
+        if (!clearToSwing(player)) {
+            return;
+        }
+        Entity victim = target;
+        boolean hits = rayHitsTarget(player, victim, pose);
+        // With Humanize off the click is withheld until it would land, so every swing the client
+        // ever sends is a hit and the hit ratio is exactly one. Nobody plays like that; even the
+        // best sessions in a training set are full of swings at air, and a ratio of 1.0 sits
+        // outside the support of that data no matter how good the rotations feeding it are. On,
+        // the click goes out on its own cadence and the reach ray only decides whether anything
+        // is told to take damage - which is all a real click has ever done.
+        if (!hits && !humanize.get()) {
+            return;
+        }
+        if (!ActionGuard.getInstance().tryReserve(this)) {
+            return;
+        }
+        if (hits) {
             packets.atPose(pose, dispatched -> canDispatchAttack(mc, player, victim, pose, dispatched),
                     () -> PacketLog.getInstance().tagged("KillAura", () -> {
                 player.swingItem();
                 mc.playerController.attackEntity(player, victim);
             }));
-            nextClickAt = nextDeadline(nextClickAt, now, CpsDelay.sample(random, cps.getLo(), cps.getHi()));
+        } else {
+            // A miss is still a click: the arm swings and nothing is told to take damage. The swing
+            // is deliberately sent outside atPose, since the pose validation exists to drop an
+            // attack whose ray went stale and there is no attack here to drop.
+            PacketLog.getInstance().tagged("KillAura", player::swingItem);
         }
+        nextClickAt = nextDeadline(nextClickAt, now, clickDelay());
+    }
+
+    /**
+     * The next inter-click gap. Humanize replaces the uniform roll with a tempo that carries across
+     * clicks and a skewed spread around it, because a flat interval histogram with two hard edges
+     * and no autocorrelation describes no hand that has ever held a mouse.
+     */
+    private long clickDelay() {
+        return humanize.get() ? rhythm.sample(cps.getLo(), cps.getHi())
+                : CpsDelay.sample(random, cps.getLo(), cps.getHi());
     }
 
     private static boolean paused(Minecraft mc, EntityPlayerSP player) {
         return mc.currentScreen != null || !mc.inGameHasFocus || mc.getRenderViewEntity() != player || player.isRiding();
     }
 
-    private boolean clearToAttack(EntityPlayerSP player, Entity victim, PlayerPacketState.Pose pose) {
+    /** Everything a click needs that is not the reach ray, so a miss can still be swung. */
+    private boolean clearToSwing(EntityPlayerSP player) {
         return RotationManager.getInstance().owns(this)
                 && !SlotGuard.getInstance().isBusyAbove(ResourcePriority.NORMAL)
-                && !player.isUsingItem()
-                && rayHitsTarget(player, victim, pose);
+                && !player.isUsingItem();
+    }
+
+    private boolean clearToAttack(EntityPlayerSP player, Entity victim, PlayerPacketState.Pose pose) {
+        return clearToSwing(player) && rayHitsTarget(player, victim, pose);
     }
 
     private boolean canDispatchAttack(Minecraft mc, EntityPlayerSP player, Entity victim,
@@ -240,9 +309,20 @@ public class KillAura extends Module {
         if (!pose.isKnown()) {
             return false;
         }
-        double reach = range.get() + CombatManager.getInstance().getReachBonus();
+        double reach = attackReach();
         return RayPicker.pick(player.worldObj, player, pose.eyes(player.getEyeHeight()), pose.look(),
                 reach, reach, 1.0D, null, false, false, true).getEntity() == victim;
+    }
+
+    /**
+     * How far the click is allowed to land. Humanize caps the total rather than the setting, so a
+     * Reach bonus cannot be added on top of an already legal range to put it over: the distance
+     * between two hitboxes at the moment of a hit falls straight out of the packet stream, needs no
+     * behavioural model to read, and is not something a shaped rotation has any bearing on.
+     */
+    private double attackReach() {
+        double reach = range.get() + CombatManager.getInstance().getReachBonus();
+        return humanize.get() ? HumanLimits.reach(reach) : reach;
     }
 
     static long nextDeadline(long previous, long now, long delay) {
@@ -267,37 +347,83 @@ public class KillAura extends Module {
             resetAim();
             return;
         }
-        RotationManager rotations = RotationManager.getInstance();
-        if (aimTarget != victim) {
-            hand.retarget();
-            aimTarget = victim;
+        if (!reacted(System.currentTimeMillis())) {
+            // Still reacting: request nothing, so the broker eases the spoof back toward the camera
+            // exactly as it would if no target had been found. The turn begins from rest when the
+            // window closes, because resetAim leaves aimTarget null and the hand is primed there.
+            resetAim();
+            return;
         }
-        wander = hand.wander();
+        RotationManager rotations = RotationManager.getInstance();
+        // A new target, or Humanize flipped under us, restarts the hand. Priming draws randomness,
+        // so the unshaped path resets instead: with Humanize off the aim must be fully determined.
+        boolean human = humanize.get();
+        if (aimTarget != victim || human != shaping) {
+            if (human) {
+                shaper.retarget();
+            } else {
+                shaper.reset();
+            }
+            aimTarget = victim;
+            shaping = human;
+        }
+        drift = human ? shaper.drift() : AimShaper.REST;
         Vec3 eyes = player.getPositionEyes(1.0F);
         AxisAlignedBB in = aimBox(victim.getEntityBoundingBox());
-        Vec3 aim = aimPoint(in, eyes, wander);
+        Vec3 aim = aimPoint(in, eyes);
         float[] want = RotationManager.angleTo(eyes.xCoord, eyes.yCoord, eyes.zCoord,
                 aim.xCoord, aim.yCoord, aim.zCoord);
+        if (!human) {
+            // Straight at the hitbox at exactly the slider, both axes the same: no shaping at all.
+            turnRate = pitchRate = rotationSpeed.get();
+            rotations.request(this, want[0], want[1], ResourcePriority.NORMAL, turnRate);
+            return;
+        }
 
+        // Shaping measures its error from the look actually on the wire, not from the camera the
+        // player is still steering with, or a silent aura would brake against the wrong distance.
         float fromYaw = rotations.isActive() ? rotations.getServerYaw() : player.rotationYaw;
         float fromPitch = rotations.isActive() ? rotations.getServerPitch() : player.rotationPitch;
-        boolean onTarget = onTarget(eyes, in, HandProfile.yawError(want[0], fromYaw),
-                HandProfile.pitchError(want[1], fromPitch));
-        HandProfile.Step step = hand.step(fromYaw, fromPitch, want[0], want[1], onTarget);
-        yawRate = step.yawRate;
+        boolean onTarget = onTarget(eyes, in, AimShaper.yawError(want[0], fromYaw),
+                AimShaper.pitchError(want[1], fromPitch));
+        // The shaper derives its whole cruising band from this ceiling, so a non-human ceiling
+        // buys a perfectly hand-shaped curve at a speed no wrist reaches. Clamp before shaping.
+        AimShaper.Step step = shaper.step(fromYaw, fromPitch, want[0], want[1],
+                HumanLimits.turnRate(rotationSpeed.get()), onTarget);
+        turnRate = step.yawRate;
         pitchRate = step.pitchRate;
-        rotations.request(this, step.yaw, step.pitch, ResourcePriority.NORMAL, yawRate, pitchRate);
+        rotations.request(this, step.yaw, step.pitch, ResourcePriority.NORMAL, turnRate, pitchRate);
     }
 
     private void resetAim() {
         aimTarget = null;
-        yawRate = pitchRate = 0.0;
-        wander = HandProfile.REST;
-        hand.reset();
+        shaping = false;
+        turnRate = pitchRate = 0.0;
+        drift = AimShaper.REST;
+        shaper.reset();
+    }
+
+    // ---- Phase 3: diagnostics (PRE @ DRAIN-1, after the broker has stepped) ----
+
+    /**
+     * Sampled once the broker has produced this tick's look, so the camera series and the wire
+     * series describe the same tick instead of sitting one apart. This must stay purely passive:
+     * no randomness, no state the aim reads back.
+     */
+    @EventTarget(priority = EventPriority.DRAIN - 1)
+    public void onDiagnostics(EventUpdate event) {
+        if (!event.isPre() || !render.get()) {
+            return;
+        }
+        EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+        if (player != null) {
+            debug.sample(player, turnRate, pitchRate);
+        }
     }
 
     // ---- Aim geometry ----
 
+    /** Would freezing here still leave the ray inside the target? A hand only rests once aimed. */
     private static boolean onTarget(Vec3 eyes, AxisAlignedBB in, double yawError, double pitchError) {
         Vec3 center = in.getCenter();
         double dx = center.xCoord - eyes.xCoord;
@@ -313,11 +439,16 @@ public class KillAura extends Module {
         return box.contract(AIM_INSET, AIM_INSET, AIM_INSET);
     }
 
-    private Vec3 aimPoint(AxisAlignedBB in, Vec3 eyes, HandProfile.Wander offset) {
+    /**
+     * The point on the hitbox to aim at this tick: the raytrace base, nudged by the hand's current
+     * drift and pulled back inside the box. Reads {@link #drift} rather than taking it as an
+     * argument so the tracer and the aim cannot drift apart within a tick.
+     */
+    private Vec3 aimPoint(AxisAlignedBB in, Vec3 eyes) {
         Vec3 base = basePoint(in, eyes);
-        return in.closestPoint(base.addVector((in.maxX - in.minX) * offset.x,
-                (in.maxY - in.minY) * offset.y,
-                (in.maxZ - in.minZ) * offset.z));
+        return in.closestPoint(base.addVector((in.maxX - in.minX) * drift.x,
+                (in.maxY - in.minY) * drift.y,
+                (in.maxZ - in.minZ) * drift.z));
     }
 
     private Vec3 basePoint(AxisAlignedBB in, Vec3 eyes) {
@@ -353,13 +484,18 @@ public class KillAura extends Module {
         }
         float partialTicks = event.getPartialTicks();
         Vec3 eyes = player.getPositionEyes(partialTicks);
-        Vec3 aim = aimPoint(aimBox(interpBox(victim, partialTicks)), eyes, wander);
+        Vec3 aim = aimPoint(aimBox(interpBox(victim, partialTicks)), eyes);
 
         KillAuraDebug.drawTracer(eyes, player.getLook(partialTicks), aim);
     }
 
     private CombatManager.Filters filters() {
+        // Eligibility keeps the configured range: rotating toward someone still out of reach is
+        // ordinary, and it is attackReach that decides what a click may actually touch. The cone is
+        // capped, since engaging something behind you is awareness rather than aim and no turn
+        // shaping covers for it.
+        double cone = humanize.get() ? HumanLimits.fov(fov.get()) : fov.get();
         return new CombatManager.Filters(players.get(), mobs.get(), animals.get(), invisible.get(), npcs.get(),
-                Math.max(rotationRange.get(), range.get()), fov.get(), true, true);
+                Math.max(rotationRange.get(), range.get()), cone, true, true);
     }
 }

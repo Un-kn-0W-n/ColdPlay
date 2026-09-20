@@ -367,6 +367,7 @@
           95.0,
           245.0
         ],
+        "Auto Close": true,
         "Auto Off": false
       }
     },

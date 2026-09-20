@@ -586,6 +586,7 @@ public class PlayerControllerMP
     {
         if (playerIn.openContainer.windowId != windowId
                 || coldplay.module.movement.InvMove.isInputPaused(this.mc.currentScreen)
+                || coldplay.module.movement.InvMove.holdsAutomation(playerIn)
                 || !coldplay.broker.InventoryTransactions.getInstance().canClick(playerIn.openContainer, slotId, button, mode))
             return false;
         windowClick(windowId, slotId, button, mode, playerIn, true);

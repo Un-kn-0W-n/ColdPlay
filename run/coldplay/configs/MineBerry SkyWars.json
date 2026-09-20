@@ -9,9 +9,11 @@
         "Animals": false,
         "Invisible": false,
         "NPCs": false,
+        "Through Blocks": false,
         "Range": 4.5,
         "FOV": 180.0,
-        "Level": "Normal"
+        "Level": "Normal",
+        "Auto Off": true
       }
     },
     "AntiBot": {
@@ -44,8 +46,8 @@
         "Target": "Distance",
         "Lock": "Single",
         "Rotation Speed": [
-          19.0,
-          31.5
+          38.0,
+          52.5
         ],
         "Pitch Speed": [
           9.0,
@@ -59,7 +61,7 @@
         ],
         "Range": 3.0,
         "Raytrace": "Center",
-        "Render": false,
+        "Render": true,
         "Graph Scale": 1.0,
         "Auto Off": true
       }
@@ -99,10 +101,10 @@
       }
     },
     "KeepSprint": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Chance": 100.0
+        "Chance": 75.0
       }
     },
     "AutoThrow": {
@@ -361,9 +363,10 @@
       "settings": {
         "Mode": "Normal",
         "Delay": [
-          150.0,
+          85.0,
           190.0
         ],
+        "Auto Close": true,
         "Auto Off": false
       }
     },
