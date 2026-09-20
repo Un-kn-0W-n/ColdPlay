@@ -7,6 +7,7 @@ import coldplay.util.ResourcePriority;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
+import net.minecraft.client.multiplayer.WorldClient;
 
 /**
  * Arbitrates temporary hotbar slot overrides and restores the player's own slot on release.
@@ -22,6 +23,8 @@ public final class SlotGuard {
     private int baseSlot = NONE;
     private int lastKnownSlot = NONE;
     private EntityPlayerSP trackedPlayer;
+    private WorldClient trackedWorld;
+    private boolean restorePending;
 
     private SlotGuard() {
     }
@@ -31,18 +34,27 @@ public final class SlotGuard {
     }
 
     @EventTarget(priority = EventPriority.BROKER_RESET)
-    public void onUpdate(EventUpdate event) {
+    public synchronized void onUpdate(EventUpdate event) {
         if (!event.isPre()) {
             return;
         }
-        EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-        if (player != trackedPlayer) {
-            reset();
-            trackedPlayer = player;
-        }
+        EntityPlayerSP player = syncSession();
         if (player != null) {
             syncPlayerSlot(player.inventory.currentItem);
+            restoreIfSafe(player);
         }
+    }
+
+    /** Requests and releases can arrive before the next PRE after a world/player change. */
+    private EntityPlayerSP syncSession() {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayerSP player = mc.thePlayer;
+        if (player != trackedPlayer || mc.theWorld != trackedWorld) {
+            reset();
+            trackedPlayer = player;
+            trackedWorld = mc.theWorld;
+        }
+        return player;
     }
 
     /** A slot change the guard did not make becomes the new base and drops any override. */
@@ -51,6 +63,8 @@ public final class SlotGuard {
         if (moved || baseSlot == NONE) {
             baseSlot = cur;
             owner = null;
+            ownerPriority = 0;
+            restorePending = false;
         }
         lastKnownSlot = cur;
         return moved;
@@ -65,7 +79,7 @@ public final class SlotGuard {
         if (slot < 0 || slot > 8) {
             return false;
         }
-        EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+        EntityPlayerSP player = syncSession();
         if (player == null) {
             return false;
         }
@@ -75,9 +89,11 @@ public final class SlotGuard {
         if (owner != null && owner != who && priority <= ownerPriority) {
             return false;
         }
-        if (owner == null) {
+        if (owner == null && !restorePending) {
             baseSlot = player.inventory.currentItem;
         }
+        // A new override inherits the original base, not an unrestored temporary slot.
+        restorePending = false;
         owner = who;
         ownerPriority = priority;
         player.inventory.currentItem = slot;
@@ -90,21 +106,55 @@ public final class SlotGuard {
         clearOwner(who, true);
     }
 
+    /**
+     * Gives up control now, but waits for item use and GUIs to finish before restoring.
+     * The pending restore survives the caller being disabled; manual slot changes and
+     * session changes cancel it, and a new requester inherits the original base slot.
+     */
+    public synchronized void releaseWhenSafe(Object who) {
+        EntityPlayerSP player = ownedPlayer(who);
+        if (player == null) {
+            return;
+        }
+        owner = null;
+        ownerPriority = 0;
+        restorePending = true;
+        restoreIfSafe(player);
+    }
+
+    private void restoreIfSafe(EntityPlayerSP player) {
+        if (!restorePending || player.isUsingItem() || Minecraft.getMinecraft().currentScreen != null) {
+            return;
+        }
+        if (baseSlot >= 0 && baseSlot <= 8) {
+            player.inventory.currentItem = baseSlot;
+        }
+        lastKnownSlot = player.inventory.currentItem;
+        restorePending = false;
+    }
+
     /** Gives up control without restoring; the current slot becomes the new base. */
     public synchronized void relinquish(Object who) {
         clearOwner(who, false);
     }
 
-    private void clearOwner(Object who, boolean restoreBase) {
-        if (owner != who) {
-            return;
+    /** Poll before releasing too: a manual scroll since PRE must never be undone. */
+    private EntityPlayerSP ownedPlayer(Object who) {
+        EntityPlayerSP player = syncSession();
+        if (player != null) {
+            syncPlayerSlot(player.inventory.currentItem);
         }
-        EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-        owner = null;
-        ownerPriority = 0;
+        return owner == who ? player : null;
+    }
+
+    private void clearOwner(Object who, boolean restoreBase) {
+        EntityPlayerSP player = ownedPlayer(who);
         if (player == null) {
             return;
         }
+        owner = null;
+        ownerPriority = 0;
+        restorePending = false;
         if (restoreBase && baseSlot >= 0 && baseSlot <= 8) {
             player.inventory.currentItem = baseSlot;
         } else if (!restoreBase) {
@@ -130,5 +180,6 @@ public final class SlotGuard {
         ownerPriority = 0;
         baseSlot = NONE;
         lastKnownSlot = NONE;
+        restorePending = false;
     }
 }

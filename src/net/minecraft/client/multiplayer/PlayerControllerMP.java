@@ -533,6 +533,9 @@ public class PlayerControllerMP
     public void attackEntity(EntityPlayer playerIn, Entity targetEntity)
     {
         boolean wasSprinting = playerIn.isSprinting();
+        // ColdPlay >>> EventPreAttack, before the slot sync so a listener's C09 precedes this attack's C02
+        coldplay.ColdPlay.post(new coldplay.event.EventPreAttack(targetEntity));
+        // ColdPlay <<<
         this.syncCurrentPlayItem();
         this.netClientHandler.addToSendQueue(new C02PacketUseEntity(targetEntity, C02PacketUseEntity.Action.ATTACK));
 

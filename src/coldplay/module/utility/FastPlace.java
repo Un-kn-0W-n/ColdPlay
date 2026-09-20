@@ -11,10 +11,12 @@ import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
 
 public class FastPlace extends Module {
-    private final NumberSetting delay = add(new NumberSetting("Delay", 0.0, 0.0, 4.0, 1.0).describe("Ticks between placements (0 = every tick, 4 = vanilla)."));
+
+    private final NumberSetting delay = add(new NumberSetting("Delay", 0.0, 0.0, 4.0, 1.0)
+            .describe("Ticks between placements (0 = every tick, 4 = vanilla)."));
 
     public FastPlace() {
-        super("FastPlace", Category.UTILITY, "Removes the cooldown between held block placements.");
+        super("FastPlace", Category.UTILITY, "Reduces the cooldown between held block placements.");
     }
 
     @EventTarget
@@ -22,18 +24,17 @@ public class FastPlace extends Module {
         if (!event.isPre()) {
             return;
         }
+
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.thePlayer == null) {
             return;
         }
-        // Blocks only; rods, snowballs and food share rightClickDelayTimer and stay vanilla.
+
         ItemStack held = mc.thePlayer.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemBlock)) {
             return;
         }
-        int target = delay.get().intValue();
-        if (mc.rightClickDelayTimer > target) {
-            mc.rightClickDelayTimer = target;
-        }
+
+        mc.rightClickDelayTimer = Math.min(mc.rightClickDelayTimer, delay.get().intValue());
     }
 }
