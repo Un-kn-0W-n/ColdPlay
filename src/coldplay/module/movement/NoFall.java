@@ -1,19 +1,17 @@
 package coldplay.module.movement;
 
-import com.google.common.base.Predicate;
-
+import coldplay.broker.ActionGuard;
+import coldplay.broker.RotationManager;
+import coldplay.broker.SlotGuard;
 import coldplay.event.EventPriority;
 import coldplay.event.EventTarget;
 import coldplay.event.EventUpdate;
 import coldplay.module.Category;
 import coldplay.module.Module;
-import coldplay.setting.NumberSetting;
-import coldplay.broker.ActionGuard;
 import coldplay.util.InvUtil;
 import coldplay.util.RayTraceUtil;
-import coldplay.broker.RotationManager;
 import coldplay.util.ResourcePriority;
-import coldplay.broker.SlotGuard;
+
 import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
@@ -30,35 +28,14 @@ import net.minecraft.util.Vec3;
 
 public class NoFall extends Module {
 
-    private final NumberSetting minFall = add(new NumberSetting("MinFallDistance", 3.0, 0.0, 20.0, 0.5)
-            .describe("Start an MLG after falling this many blocks."));
-    // The 5.0 bucket ray from the eyes reaches only ~3.38 below the feet, hence the 3.4 max.
-    private final NumberSetting placeHeight = add(new NumberSetting("PlaceHeight", 3.0, 1.0, 3.4, 0.5)
-            .describe("Place when the floor is this close to your feet."));
+    private static final int PRIORITY = ResourcePriority.FALL_SAFETY;
 
-    private static final int SLOT_PRIORITY = ResourcePriority.FALL_SAFETY;
-    private static final int ROTATION_PRIORITY = ResourcePriority.FALL_SAFETY;
-    private static final int TIMEOUT_TICKS = 40;
-    private static final int LOOK_TICKS = 2;
-    private static final double ARM_DISTANCE = 12.0D;
-    private static final double REACH = 5.0D;
-
-    private boolean active;
-    private boolean placed;
-    private int slot = -1;
-    private int ticks;
-    private int lookTicks;
+    private int bucketSlot = -1;
+    private int aimTicks;
     private BlockPos waterPos;
-    private WorldClient activeWorld;
 
     public NoFall() {
-        super("NoFall", Category.MOVEMENT, "Places and retrieves water to prevent fall damage.");
-        addAutoOff();
-    }
-
-    @Override
-    protected void onEnable() {
-        reset();
+        super("NoFall", Category.MOVEMENT, "Places water to break a fall, then picks it up.");
     }
 
     @Override
@@ -68,28 +45,22 @@ public class NoFall extends Module {
 
     @EventTarget(priority = EventPriority.AIM)
     public void onAim(EventUpdate event) {
-        if (!event.isPre() || !active) {
-            return;
-        }
-
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.thePlayer;
-        if (player == null || mc.theWorld != activeWorld
-                || mc.currentScreen != null || !mc.inGameHasFocus) {
+        EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+        if (!event.isPre() || bucketSlot == -1 || player == null) {
             return;
         }
 
         float yaw = player.rotationYaw;
         float pitch = 90.0F;
-        if (placed && waterPos != null) {
+        if (waterPos != null) {
             Vec3 eyes = player.getPositionEyes(1.0F);
-            Vec3 center = Vec3.atBlockCenter(waterPos);
-            float[] look = RotationManager.angleTo(eyes.xCoord, eyes.yCoord, eyes.zCoord,
-                    center.xCoord, center.yCoord, center.zCoord);
-            yaw = look[0];
-            pitch = look[1];
+            Vec3 target = Vec3.atBlockCenter(waterPos);
+            float[] angles = RotationManager.angleTo(eyes.xCoord, eyes.yCoord, eyes.zCoord,
+                    target.xCoord, target.yCoord, target.zCoord);
+            yaw = angles[0];
+            pitch = angles[1];
         }
-        RotationManager.getInstance().request(this, yaw, pitch, ROTATION_PRIORITY, 180.0D);
+        RotationManager.getInstance().request(this, yaw, pitch, PRIORITY, 180.0D);
     }
 
     @EventTarget(priority = EventPriority.FALL_SAFETY)
@@ -105,186 +76,104 @@ public class NoFall extends Module {
             reset();
             return;
         }
-        if (!active) {
-            tryArm(mc, player, world);
+        if (bucketSlot == -1) {
+            arm(player);
             return;
         }
-        if (world != activeWorld) {
-            SlotGuard.getInstance().relinquish(this);
-            clear();
-            return;
-        }
-
-        SlotGuard slots = SlotGuard.getInstance();
-        if (!slots.isHeldBy(this) || !slots.request(this, slot, SLOT_PRIORITY)
-                || mc.currentScreen != null || !mc.inGameHasFocus
-                || world.provider.doesWaterVaporize() || ++ticks > TIMEOUT_TICKS) {
+        if ((waterPos == null && player.onGround)
+                || !SlotGuard.getInstance().request(this, bucketSlot, PRIORITY)) {
             reset();
             return;
         }
 
-        if (RotationManager.getInstance().owns(this)) {
-            lookTicks++;
-        } else {
-            lookTicks = 0;
-        }
-
-        if (placed) {
-            retrieve(player, world);
-        } else {
-            place(player, world);
-        }
-    }
-
-    private void tryArm(Minecraft mc, EntityPlayerSP player, WorldClient world) {
-        if (mc.currentScreen != null || !mc.inGameHasFocus || world.provider.doesWaterVaporize()
-                || player.onGround || player.motionY >= 0.0D || player.isInWater() || player.isInLava()
-                || player.isOnLadder() || player.isRiding() || player.capabilities.allowFlying
-                || player.fallDistance < minFall.get() || !groundAhead(player, world)) {
-            return;
-        }
-
-        int found = findWaterBucket(player);
-        if (found != -1 && SlotGuard.getInstance().request(this, found, SLOT_PRIORITY)) {
-            active = true;
-            slot = found;
-            activeWorld = world;
-        }
-    }
-
-    private void place(EntityPlayerSP player, WorldClient world) {
+        aimTicks = RotationManager.getInstance().owns(this) ? aimTicks + 1 : 0;
         ItemStack held = player.getHeldItem();
-        if (player.onGround || player.motionY >= 0.0D || player.isInWater() || player.isInLava()
-                || held == null || held.getItem() != Items.water_bucket) {
+        if (held == null || held.getItem() != (waterPos == null ? Items.water_bucket : Items.bucket)) {
             reset();
             return;
         }
-        if (lookTicks < LOOK_TICKS) {
+        if (waterPos == null) {
+            place(player, world, held);
+        } else {
+            retrieve(player, world, held);
+        }
+    }
+
+    private void arm(EntityPlayerSP player) {
+        if (player.onGround || player.motionY >= 0.0D || player.fallDistance < 3.0F) {
             return;
         }
+        int slot = InvUtil.findHotbarSlot(player,
+                stack -> stack != null && stack.getItem() == Items.water_bucket);
+        if (slot != -1 && SlotGuard.getInstance().request(this, slot, PRIORITY)) {
+            bucketSlot = slot;
+        }
+    }
 
-        BlockPos target = placementTarget(player, world);
-        if (target != null && useBucket(player)) {
-            placed = true;
+    private void place(EntityPlayerSP player, WorldClient world, ItemStack held) {
+        if (aimTicks < 2) {
+            return;
+        }
+        MovingObjectPosition hit = trace(player, world, false);
+        if (!RayTraceUtil.isBlockHit(hit) || hit.sideHit != EnumFacing.UP
+                || player.getEntityBoundingBox().minY - hit.hitVec.yCoord > 3.0D) {
+            return;
+        }
+        BlockPos target = hit.getBlockPos().up();
+        if (target.getX() != MathHelper.floor_double(player.posX)
+                || target.getZ() != MathHelper.floor_double(player.posZ)) {
+            return;
+        }
+        Material material = world.getBlockState(target).getBlock().getMaterial();
+        if (!material.isSolid() && !material.isLiquid() && useBucket(player, world, held)) {
             waterPos = target;
-            ticks = 0;
-            lookTicks = 0;
+            aimTicks = 0;
         }
     }
 
-    private void retrieve(EntityPlayerSP player, WorldClient world) {
-        ItemStack held = player.getHeldItem();
-        if (held == null) {
+    private void retrieve(EntityPlayerSP player, WorldClient world, ItemStack held) {
+        if (!player.onGround && !player.isInWater()) {
+            return;
+        }
+        IBlockState state = world.getBlockState(waterPos);
+        if (state.getBlock().getMaterial() != Material.water
+                || !(state.getBlock() instanceof BlockLiquid)
+                || ((Integer) state.getValue(BlockLiquid.LEVEL)).intValue() != 0) {
             reset();
             return;
         }
-        if (held.getItem() == Items.water_bucket) {
-            return; // placement not acknowledged yet
-        }
-        if (held.getItem() != Items.bucket) {
+        if (aimTicks >= 2 && RayTraceUtil.matchesBlock(trace(player, world, true), waterPos)
+                && useBucket(player, world, held)) {
             reset();
-            return;
-        }
-
-        if ((player.onGround || player.isInWater()) && lookTicks >= LOOK_TICKS
-                && isWaterSource(world, waterPos) && rayHitsWater(player, world, waterPos)
-                && useBucket(player)) {
-            reset(); // the C08 is queued; the restoring C09 follows it
         }
     }
 
-    private boolean useBucket(EntityPlayerSP player) {
-        Minecraft mc = Minecraft.getMinecraft();
-        ActionGuard guard = ActionGuard.getInstance();
-        ItemStack held = player.getHeldItem();
-        if (mc.playerController == null || mc.theWorld == null || held == null
-                || !guard.tryReserveAfterCleanTick(this)) {
+    private static MovingObjectPosition trace(EntityPlayerSP player, WorldClient world, boolean collectWater) {
+        return RayTraceUtil.traceToLook(world, player.getPositionEyes(1.0F),
+                RotationManager.getInstance().getSentLookVec(), 5.0D, collectWater, !collectWater, false);
+    }
+
+    private boolean useBucket(EntityPlayerSP player, WorldClient world, ItemStack held) {
+        if (!ActionGuard.getInstance().tryReserveAfterCleanTick(this)) {
             return false;
         }
-        float realYaw = player.rotationYaw;
-        float realPitch = player.rotationPitch;
         RotationManager rotations = RotationManager.getInstance();
+        float yaw = player.rotationYaw;
+        float pitch = player.rotationPitch;
         try {
             player.rotationYaw = rotations.getSentYaw();
             player.rotationPitch = rotations.getSentPitch();
-            coldplay.broker.PacketLog.getInstance().setOrigin("NoFall");
-            return mc.playerController.sendUseItem(player, mc.theWorld, held);
+            return Minecraft.getMinecraft().playerController.sendUseItem(player, world, held);
         } finally {
-            coldplay.broker.PacketLog.getInstance().setOrigin(null);
-            player.rotationYaw = realYaw;
-            player.rotationPitch = realPitch;
+            player.rotationYaw = yaw;
+            player.rotationPitch = pitch;
         }
-    }
-
-    private boolean groundAhead(EntityPlayerSP player, WorldClient world) {
-        double feetY = player.getEntityBoundingBox().minY;
-        Vec3 start = new Vec3(player.posX, feetY, player.posZ);
-        MovingObjectPosition hit = RayTraceUtil.trace(world, start,
-                start.addVector(0.0D, -ARM_DISTANCE, 0.0D), true, true, false);
-        return RayTraceUtil.isBlockHit(hit)
-                && !world.getBlockState(hit.getBlockPos()).getBlock().getMaterial().isLiquid();
-    }
-
-    private BlockPos placementTarget(EntityPlayerSP player, WorldClient world) {
-        MovingObjectPosition hit = bucketRay(player, world, false);
-        if (hit == null || hit.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK
-                || hit.sideHit != EnumFacing.UP
-                || player.getEntityBoundingBox().minY - hit.hitVec.yCoord > placeHeight.get()) {
-            return null;
-        }
-
-        BlockPos water = hit.getBlockPos().up();
-        if (water.getX() != MathHelper.floor_double(player.posX)
-                || water.getZ() != MathHelper.floor_double(player.posZ)
-                || water.getY() > MathHelper.floor_double(player.getEntityBoundingBox().minY)) {
-            return null;
-        }
-
-        Material target = world.getBlockState(water).getBlock().getMaterial();
-        return target.isSolid() || target.isLiquid() ? null : water;
-    }
-
-    private boolean rayHitsWater(EntityPlayerSP player, WorldClient world, BlockPos expected) {
-        return RayTraceUtil.matchesBlock(bucketRay(player, world, true), expected);
-    }
-
-    private MovingObjectPosition bucketRay(EntityPlayerSP player, WorldClient world, boolean empty) {
-        Vec3 start = player.getPositionEyes(1.0F);
-        Vec3 look = RotationManager.getInstance().getSentLookVec();
-        return RayTraceUtil.traceToLook(world, start, look, REACH, empty, !empty, false);
-    }
-
-    private boolean isWaterSource(WorldClient world, BlockPos pos) {
-        if (pos == null) {
-            return false;
-        }
-        IBlockState state = world.getBlockState(pos);
-        return state.getBlock() instanceof BlockLiquid
-                && state.getBlock().getMaterial() == Material.water
-                && ((Integer) state.getValue(BlockLiquid.LEVEL)).intValue() == 0;
-    }
-
-    private int findWaterBucket(EntityPlayerSP player) {
-        return InvUtil.findHotbarSlot(player, new Predicate<ItemStack>() {
-            @Override
-            public boolean apply(ItemStack stack) {
-                return stack != null && stack.getItem() == Items.water_bucket;
-            }
-        });
     }
 
     private void reset() {
         SlotGuard.getInstance().release(this);
-        clear();
-    }
-
-    private void clear() {
-        active = false;
-        placed = false;
-        slot = -1;
-        ticks = 0;
-        lookTicks = 0;
+        bucketSlot = -1;
+        aimTicks = 0;
         waterPos = null;
-        activeWorld = null;
     }
 }

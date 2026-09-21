@@ -46,78 +46,63 @@ import java.util.Set;
 import java.util.function.Function;
 
 public class Scaffold extends Module {
-
     private static final String HYPIXEL = "Hypixel";
     private static final String POLAR = "Polar";
     private static final String TELLY = "Telly";
 
-
-    public final ModeSetting mode = add(new ModeSetting("Mode", HYPIXEL, HYPIXEL, POLAR, TELLY)
-            .describe("Hypixel: walk-bridge holding yaw - 180, pitch raytraced onto the support block. "
-                    + "Polar: walk-bridge holding "
-                    + "yaw - 180 (45 back toward the middle of the bridge on a straight walk, none on a "
-                    + "diagonal), pitch raytraced onto the side of the support. Telly: sprint-jump "
-                    + "bridge, auto-jumps facing forward, turns back 120, 159 and 180 degrees over the first "
-                    + "three airborne ticks and places from the third on, only on a tick that turns 38 degrees "
-                    + "or less and whose look raytraces onto the support."));
-
-    private final HeaderSetting placementHeader = add(new HeaderSetting("Placement"));
-    private final BooleanSetting autoSwitch = add(new BooleanSetting("AutoSwitch", true)
-            .describe("Silently switch to a block in your hotbar while scaffolding."));
-    private final BooleanSetting keepY = add(new BooleanSetting("KeepY", true)
-            .describe("On: lock the bridge plane to the Y you last stood on, never builds upward. "
-                    + "Off: bridges flat too, but jumping raises the plane with you "
-                    + "(+1 per jump, tower or incline on demand)."));
-    private final NumberSetting expand = add(new NumberSetting("Expand", 1.0, 1.0, 6.0, 1.0)
-            .describe("Cells ahead along your travel to try after the one under you, nearest first."));
-    private final BooleanSetting safety = add(new BooleanSetting("Safety", true)
-            .describe("Hard no-fall: auto-sneak at the leading edge while the covering block isn't placed "
-                    + "yet. Vanilla's sneak edge-clamp then makes walking off the bridge impossible."));
-
-    private final HeaderSetting debugHeader = add(new HeaderSetting("Debug"));
-    private final BooleanSetting render = add(new BooleanSetting("Render", false)
-            .describe("Draw the placement raytrace: a line from your eyes to the queued scaffold hit point, "
-                    + "marked with a tenth-of-a-block box."));
-
-
-    private static final double TURN_RATE = 180.0D; // deg/tick
+    private static final double TURN_RATE = 180.0D;
     private static final float FALLBACK_PITCH = 85.0F;
     private static final int PRIORITY = ResourcePriority.NORMAL;
     private static final double MARKER_HALF = 0.05D;
 
-    private static final double CLAMP_JITTER = 0.08D; // max inset from a face-band bound, blocks
+    private static final double CLAMP_JITTER = 0.08D;
 
     private static final float SCAN_MIN_PITCH = 40.0F;
-    private static final float SCAN_STEP = 0.25F; // degrees between pitch samples
+    private static final float SCAN_STEP = 0.25F;
 
-    private static final int BACKFILL = 3; // Telly: cells covered behind the player each tick
-    private static final int TELLY_PLACE_TICK = 3; // first airborne tick allowed to click
-    private static final float MAX_PLACE_TURN = 38.0F; // yaw plus pitch degrees on a placing tick, the server flags past 40
+    private static final int BACKFILL = 3;
+    private static final int TELLY_PLACE_TICK = 3;
+    private static final float MAX_PLACE_TURN = 38.0F;
 
-    private static final float POLAR_STRAIGHT_OFFSET = 45.0F; // degrees off the hold on a straight walk
-    private static final float POLAR_ENTER_AXIS = 20.0F; // degrees off a world axis to start a straight walk
-    private static final float POLAR_LEAVE_AXIS = 25.0F; // and to end one
-    private static final double POLAR_SIDE_BAND = 0.2D; // blocks off the row centre before the offset changes side
-    private static final float POLAR_SCAN_STEP = 0.15F; // the edge windows are a few tenths of a degree wide
+    private static final float POLAR_STRAIGHT_OFFSET = 45.0F;
+    private static final float POLAR_ENTER_AXIS = 20.0F;
+    private static final float POLAR_LEAVE_AXIS = 25.0F;
+    private static final double POLAR_SIDE_BAND = 0.2D;
+    private static final float POLAR_SCAN_STEP = 0.15F;
 
+    public final ModeSetting mode = add(new ModeSetting("Mode", HYPIXEL, HYPIXEL, POLAR, TELLY)
+            .describe("Hypixel and Polar walk-bridge. Telly sprint-jump bridges."));
 
-    private final Random rand = new Random();
+    private final HeaderSetting placementHeader = add(new HeaderSetting("Placement"));
+    private final BooleanSetting autoSwitch = add(new BooleanSetting("AutoSwitch", true)
+            .describe("Silently select blocks from your hotbar."));
+    private final BooleanSetting keepY = add(new BooleanSetting("KeepY", true)
+            .describe("Keep the bridge level when jumping."));
+    private final NumberSetting expand = add(new NumberSetting("Expand", 1.0, 1.0, 6.0, 1.0)
+            .describe("Number of cells ahead to try after the cell beneath you."));
+    private final BooleanSetting safety = add(new BooleanSetting("Safety", true)
+            .describe("Sneak when approaching an edge."));
+
+    private final HeaderSetting debugHeader = add(new HeaderSetting("Debug"));
+    private final BooleanSetting render = add(new BooleanSetting("Render", false)
+            .describe("Show the pending placement hit point."));
+
+    private final Random random = new Random();
     private Placement pending;
-    private List<BlockPos> wanted = new ArrayList<>(); // Hypixel and Telly: this tick's cells, best first
-    private int planeY = Integer.MIN_VALUE; // MIN_VALUE until seeded
-    private BlockPos ground; // cell last stood on
-    private boolean rising; // jump key seen since leaving the ground
-    private float heldPitch; // Hypixel and Polar: last aimed pitch
+    private List<BlockPos> targets = new ArrayList<>();
+    private int planeY = Integer.MIN_VALUE;
+    private BlockPos ground;
+    private boolean rising;
+    private float heldPitch;
     private long insetSalt;
 
-    private int offGroundTicks; // counted at EventUpdate PRE, before onAim reads it
-    private float polarSide; // Polar: -1 or +1, the way a straight walk offsets
+    private int offGroundTicks;
+    private float tellyAnchor = Float.NaN;
+    private float polarSide;
     private boolean polarStraight;
 
     public Scaffold() {
-        super("Scaffold", Category.MOVEMENT,
-                "Bridges beneath you: Hypixel and Polar walk-bridge behind a spoofed backward look, "
-                        + "Telly sprint-jump bridges.");
+        super("Scaffold", Category.MOVEMENT, "Places blocks beneath you while bridging.");
         addAutoOff();
     }
 
@@ -125,12 +110,13 @@ public class Scaffold extends Module {
     protected void onEnable() {
         planeY = Integer.MIN_VALUE;
         heldPitch = FALLBACK_PITCH;
-        insetSalt = rand.nextLong();
+        insetSalt = random.nextLong();
         polarSide = -1.0F;
         polarStraight = true;
         ground = null;
         rising = false;
         offGroundTicks = 0;
+        tellyAnchor = Float.NaN;
     }
 
     @Override
@@ -138,302 +124,6 @@ public class Scaffold extends Module {
         pending = null;
         SlotGuard.getInstance().release(this);
     }
-
-
-    private boolean hypixel() {
-        return HYPIXEL.equals(mode.get());
-    }
-
-    private boolean telly() {
-        return TELLY.equals(mode.get());
-    }
-
-    private boolean polar() {
-        return POLAR.equals(mode.get());
-    }
-
-    private static float backward(float yaw) {
-        return MathHelper.wrapAngleTo180_float(yaw + 180.0F);
-    }
-
-    static float polarYaw(float move, boolean straight, float side) {
-        float offset = straight ? side * POLAR_STRAIGHT_OFFSET : 0.0F;
-        return MathHelper.wrapAngleTo180_float(backward(move) + offset);
-    }
-
-    static boolean straightWalk(float moveYaw, boolean straight) {
-        float axisYaw = EnumFacing.fromAngle(moveYaw).getHorizontalIndex() * 90.0F;
-        float off = Math.abs(MathHelper.wrapAngleTo180_float(moveYaw - axisYaw));
-        return off <= (straight ? POLAR_LEAVE_AXIS : POLAR_ENTER_AXIS);
-    }
-
-    static float polarSide(double offsetX, double offsetZ, float moveYaw, float side) {
-        double axis = Math.toRadians(EnumFacing.fromAngle(moveYaw).getHorizontalIndex() * 90.0D);
-        double right = -offsetX * Math.cos(axis) - offsetZ * Math.sin(axis);
-        return Math.abs(right) > POLAR_SIDE_BAND ? Math.signum((float) right) : side;
-    }
-
-    private static BlockPos standingOn(WorldClient world, EntityPlayerSP player) {
-        AxisAlignedBB box = player.getEntityBoundingBox();
-        int y = MathHelper.floor_double(box.minY) - 1;
-        BlockPos best = new BlockPos(player.posX, y, player.posZ);
-        double bestDistance = Double.POSITIVE_INFINITY;
-        for (int x = MathHelper.floor_double(box.minX); x <= MathHelper.floor_double(box.maxX - 1.0E-7D); x++) {
-            for (int z = MathHelper.floor_double(box.minZ); z <= MathHelper.floor_double(box.maxZ - 1.0E-7D); z++) {
-                BlockPos pos = new BlockPos(x, y, z);
-                double dx = x + 0.5D - player.posX;
-                double dz = z + 0.5D - player.posZ;
-                if (dx * dx + dz * dz < bestDistance && world.getBlockState(pos).getBlock().getMaterial().isSolid()) {
-                    best = pos;
-                    bestDistance = dx * dx + dz * dz;
-                }
-            }
-        }
-        return best;
-    }
-
-    static float tellyYaw(float cameraYaw, boolean onGround, int offGroundTicks) {
-        if (onGround) {
-            return cameraYaw;
-        }
-        if (offGroundTicks <= 1) {
-            return cameraYaw - 120.0F;
-        }
-        if (offGroundTicks == 2) {
-            return cameraYaw - 159.0F;
-        }
-        return cameraYaw - 180.0F;
-    }
-
-    static float turn(float fromYaw, float fromPitch, float toYaw, float toPitch) {
-        return Math.abs(MathHelper.wrapAngleTo180_float(toYaw - fromYaw)) + Math.abs(toPitch - fromPitch);
-    }
-
-    private static float floorToGcd(float degrees) {
-        float gcd = RotationManager.gcdStep();
-        return Math.max(0.0F, (float) Math.floor((degrees - 0.001F) / gcd) * gcd);
-    }
-
-    @EventTarget(priority = EventPriority.AIM)
-    public void onAim(EventUpdate event) {
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.thePlayer;
-        if (!event.isPre() || player == null || mc.theWorld == null) {
-            return;
-        }
-        RotationManager rm = RotationManager.getInstance();
-        float yaw = rm.isActive() ? rm.getServerYaw() : player.rotationYaw;
-        float pitch = rm.isActive() ? rm.getServerPitch() : player.rotationPitch;
-        float move = PlayerUtil.movementYaw(mc, player);
-        if (hypixel()) {
-            yaw += RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(backward(move) - yaw));
-            if (180.0F - Math.abs(MathHelper.wrapAngleTo180_float(4.0F * yaw)) < 2.0F * RotationManager.gcdStep()) {
-                yaw += RotationManager.gcdStep();
-            }
-            rm.request(this, yaw, aimHypixel(mc, player, yaw, pitch), PRIORITY, TURN_RATE);
-        } else if (polar()) {
-            rm.request(this, polarYaw(move, polarStraight, polarSide), heldPitch, PRIORITY, TURN_RATE);
-        } else {
-            aimTelly(mc, player, rm, yaw, pitch);
-        }
-    }
-
-    private void aimTelly(Minecraft mc, EntityPlayerSP player, RotationManager rm, float yaw, float pitch) {
-        boolean placing = offGroundTicks >= TELLY_PLACE_TICK;
-        float yawStep = RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(
-                tellyYaw(player.rotationYaw, player.onGround, offGroundTicks) - yaw));
-        if (placing) {
-            float cap = floorToGcd(MAX_PLACE_TURN);
-            yawStep = MathHelper.clamp_float(yawStep, -cap, cap);
-        }
-        // Mid-spin, aim along the finished turn so the first placing tick only corrects a little.
-        float aimYaw = offGroundTicks > 0 && !placing
-                ? tellyYaw(player.rotationYaw, false, TELLY_PLACE_TICK) : yaw + yawStep;
-        wanted = new ArrayList<>(candidateCells(mc, player, mc.theWorld));
-        pending = findPlacement(mc, player, mc.theWorld, aimYaw);
-        float aimed = pending == null ? Float.NaN : aimPitch(player.getPositionEyes(1.0F), pending, aimYaw);
-        float pitchStep = Float.isNaN(aimed) ? 0.0F : RotationManager.gcdSnap(aimed - pitch);
-        if (placing) {
-            float budget = floorToGcd(MAX_PLACE_TURN - Math.abs(yawStep));
-            pitchStep = MathHelper.clamp_float(pitchStep, -budget, budget);
-        }
-        rm.request(this, yaw + yawStep, pitch + pitchStep, PRIORITY, TURN_RATE);
-    }
-
-    private float aimHypixel(Minecraft mc, EntityPlayerSP player, float yaw, float current) {
-        WorldClient world = mc.theWorld;
-        Vec3 eyes = player.getPositionEyes(1.0F);
-        wanted = new ArrayList<>(candidateCells(mc, player, world));
-        return scanPitch(current, SCAN_STEP, pitch -> clickAlong(world, eyes, RotationManager.lookVec(yaw, pitch)));
-    }
-
-    private float scanPitch(float current, float spacing, Function<Float, Placement> click) {
-        float gcd = RotationManager.gcdStep();
-        float step = gcd * Math.max(1, Math.round(spacing / gcd));
-        float start = current + RotationManager.gcdSnap(SCAN_MIN_PITCH - current);
-        int bestRank = Integer.MAX_VALUE;
-        List<Float> hits = new ArrayList<>();
-        for (int i = 0; start + i * step <= 90.0F; i++) {
-            float pitch = start + i * step;
-            Placement p = click.apply(pitch);
-            if (p == null) {
-                continue;
-            }
-            int rank = wanted.indexOf(p.target);
-            if (rank < bestRank) {
-                bestRank = rank;
-                hits.clear();
-            }
-            if (rank == bestRank) {
-                hits.add(pitch);
-            }
-        }
-        if (hits.isEmpty()) {
-            pending = null;
-            return heldPitch;
-        }
-        Placement now = click.apply(current);
-        heldPitch = now != null && wanted.indexOf(now.target) == bestRank ? current : hits.get(hits.size() / 2);
-        pending = click.apply(heldPitch);
-        return heldPitch;
-    }
-
-    private Placement clickAlong(WorldClient world, Vec3 eyes, Vec3 look) {
-        MovingObjectPosition hit = RayTraceUtil.traceToLook(world, eyes, look,
-                PlacementUtil.SERVER_REACH, false, false, true);
-        if (!RayTraceUtil.isBlockHit(hit)
-                || !world.getBlockState(hit.getBlockPos()).getBlock().getMaterial().isSolid()) {
-            return null;
-        }
-        BlockPos target = hit.getBlockPos().offset(hit.sideHit);
-        if (!wanted.contains(target) ||!world.getBlockState(target).getBlock().isReplaceable(world, target)
-                || !world.checkNoEntityCollision(new AxisAlignedBB(target, target.add(1, 1, 1)))) {
-            return null;
-        }
-        return new Placement(target, hit.getBlockPos(), hit.sideHit, hit.hitVec);
-    }
-
-    private Placement polarClick(WorldClient world, Vec3 eyes, float yaw, float pitch) {
-        Placement p = clickAlong(world, eyes, RotationManager.lookVec(yaw, pitch));
-        if (p == null) {
-            return null;
-        }
-        MovingObjectPosition exact = RayTraceUtil.traceToLook(world, eyes, exactLook(yaw, pitch),
-                PlacementUtil.SERVER_REACH, false, false, true);
-        return RayTraceUtil.matchesBlock(exact, p.support, p.face) ? p : null;
-    }
-
-    private static Vec3 exactLook(float yaw, float pitch) {
-        double yawRad = Math.toRadians(yaw);
-        double pitchRad = Math.toRadians(pitch);
-        return new Vec3(-Math.sin(yawRad) * Math.cos(pitchRad), -Math.sin(pitchRad),
-                Math.cos(yawRad) * Math.cos(pitchRad));
-    }
-
-    @EventTarget(priority = EventPriority.DRAIN - 1)
-    public void onPlace(EventUpdate event) {
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.thePlayer;
-        WorldClient world = mc.theWorld;
-        RotationManager rm = RotationManager.getInstance();
-        if (!event.isPre() || polar() || player == null || world == null || mc.currentScreen != null
-                || !rm.owns(this)) {
-            return;
-        }
-        if (telly() && (offGroundTicks < TELLY_PLACE_TICK || turn(rm.getSentYaw(), rm.getSentPitch(),
-                rm.getServerYaw(), rm.getServerPitch()) > MAX_PLACE_TURN)) {
-            return;
-        }
-        ItemStack held = player.getHeldItem();
-        Placement p = clickAlong(world, player.getPositionEyes(1.0F), rm.getServerLookVec());
-        if (held == null || !(held.getItem() instanceof ItemBlock) || p == null
-                || !ActionGuard.getInstance().tryReserveAfterCleanTick(this)) {
-            return;
-        }
-        PacketLog.getInstance().tagged("Scaffold", () -> {
-            if (mc.playerController.onPlayerRightClick(player, world, held, p.support, p.face, p.hitVec)) {
-                player.swingItem();
-            }
-        });
-    }
-
-    @EventTarget(priority = EventPriority.NORMAL)
-    public void onMotionAim(EventMotion event) {
-        RotationManager rm = RotationManager.getInstance();
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.thePlayer;
-        WorldClient world = mc.theWorld;
-        if (!event.isPre() || !polar() || player == null || world == null || !rm.owns(this)
-                || mc.currentScreen != null) {
-            return;
-        }
-        float move = PlayerUtil.movementYaw(mc, player);
-        polarStraight = straightWalk(move, polarStraight);
-        if (polarStraight) {
-            // The row the player stands on, not the cell under its middle, which drifts off the bridge first.
-            BlockPos row = standingOn(world, player);
-            polarSide = polarSide(player.posX - row.getX() - 0.5D, player.posZ - row.getZ() - 0.5D, move, polarSide);
-        }
-        float yaw = polarYaw(move, polarStraight, polarSide);
-        // Like Hypixel, an exact diagonal only grazes block corners, so it sits one mouse step off.
-        if (!polarStraight
-                && 180.0F - Math.abs(MathHelper.wrapAngleTo180_float(4.0F * yaw)) < 2.0F * RotationManager.gcdStep()) {
-            yaw += RotationManager.gcdStep();
-        }
-        // Land the yaw first, so the scan runs on the mouse grid of the look this packet carries.
-        rm.reaim(this, yaw, heldPitch, TURN_RATE);
-        float aimYaw = rm.getServerYaw();
-        Vec3 eyes = player.getPositionEyes(1.0F);
-        wanted = new ArrayList<>(candidateCells(mc, player, world));
-        float pitch = scanPitch(rm.getServerPitch(), POLAR_SCAN_STEP,
-                candidate -> polarClick(world, eyes, aimYaw, candidate));
-        rm.reaim(this, yaw, pitch, TURN_RATE);
-        pending = polarClick(world, eyes, rm.getServerYaw(), rm.getServerPitch());
-    }
-
-    @EventTarget
-    public void onRender3D(EventRender3D event) {
-        Minecraft mc = Minecraft.getMinecraft();
-        Placement placement = pending;
-        if (!render.get() || mc.thePlayer == null || mc.theWorld == null || placement == null) {
-            return;
-        }
-        RenderUtil.drawTracerMarker(mc.thePlayer.getPositionEyes(event.getPartialTicks()), placement.hitVec,
-                MARKER_HALF, 255, 60, 60, 180, 90, 255, 2.0F);
-    }
-
-
-    @EventTarget
-    public void onStrafe(EventStrafe event) {
-        Minecraft mc = Minecraft.getMinecraft();
-        EntityPlayerSP player = mc.thePlayer;
-        if (player == null) {
-            return;
-        }
-        boolean jumping = telly() && autoJump(event, mc, player);
-        // Sprinting while placing is its own flag.
-        if (!telly()) {
-            SprintGuard.getInstance().suppress();
-        }
-        // Not on the jump tick: the sneak slowdown would drop forward under vanilla's sprint threshold.
-        if (!jumping && safety.get() && EdgeUtil.isApproachingEdge(mc, player, EdgeUtil.MIN_PROBE)) {
-            event.applyForcedSneakSlowdown();
-        }
-    }
-
-    private boolean autoJump(EventStrafe event, Minecraft mc, EntityPlayerSP player) {
-        ItemStack held = player.getHeldItem();
-        if (!player.onGround || !PlayerUtil.anyMoveKeyDown(mc)
-                || held == null || !(held.getItem() instanceof ItemBlock)) {
-            return false;
-        }
-        if (PlayerUtil.canVanillaSprint(player, event.getForward())) {
-            player.setSprinting(true);
-        }
-        player.movementInput.jump = true;
-        return true;
-    }
-
 
     @EventTarget
     public void onUpdate(EventUpdate event) {
@@ -456,7 +146,7 @@ public class Scaffold extends Module {
         } else {
             offGroundTicks++;
         }
-        // A vanilla client cannot turn, switch or place with a screen open.
+
         if (mc.currentScreen != null) {
             pending = null;
             return;
@@ -469,31 +159,232 @@ public class Scaffold extends Module {
             pending = null;
             return;
         }
-        // The previous motion packet aimed at this cell from the current position.
+
         if (polar() && pending != null && firePending(mc, player, world, held)) {
             pending = null;
         }
     }
 
+    @EventTarget(priority = EventPriority.AIM)
+    public void onAim(EventUpdate event) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayerSP player = mc.thePlayer;
+        if (!event.isPre() || player == null || mc.theWorld == null) {
+            return;
+        }
+        RotationManager rotations = RotationManager.getInstance();
+        float yaw = rotations.isActive() ? rotations.getServerYaw() : player.rotationYaw;
+        float pitch = rotations.isActive() ? rotations.getServerPitch() : player.rotationPitch;
+        float move = PlayerUtil.movementYaw(mc, player);
+        if (hypixel()) {
+            yaw += RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(backward(move) - yaw));
+            yaw = avoidCornerYaw(yaw);
+            rotations.request(this, yaw, aimHypixel(mc, player, yaw, pitch), PRIORITY, TURN_RATE);
+        } else if (polar()) {
+            rotations.request(this, polarYaw(move, polarStraight, polarSide), heldPitch, PRIORITY, TURN_RATE);
+        } else {
+            aimTelly(mc, player, rotations, yaw, pitch, move);
+        }
+    }
+
+    @EventTarget(priority = EventPriority.NORMAL)
+    public void onMotionAim(EventMotion event) {
+        RotationManager rotations = RotationManager.getInstance();
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayerSP player = mc.thePlayer;
+        WorldClient world = mc.theWorld;
+        if (!event.isPre() || !polar() || player == null || world == null || !rotations.owns(this)
+                || mc.currentScreen != null) {
+            return;
+        }
+        float move = PlayerUtil.movementYaw(mc, player);
+        polarStraight = straightWalk(move, polarStraight);
+        if (polarStraight) {
+            BlockPos row = standingOn(world, player);
+            polarSide = polarSide(player.posX - row.getX() - 0.5D, player.posZ - row.getZ() - 0.5D, move, polarSide);
+        }
+        float yaw = polarYaw(move, polarStraight, polarSide);
+
+        if (!polarStraight) {
+            yaw = avoidCornerYaw(yaw);
+        }
+
+        rotations.reaim(this, yaw, heldPitch, TURN_RATE);
+        float aimYaw = rotations.getServerYaw();
+        Vec3 eyes = player.getPositionEyes(1.0F);
+        targets = candidateCells(player, world);
+        float pitch = scanPitch(rotations.getServerPitch(), POLAR_SCAN_STEP,
+                candidate -> polarClick(world, eyes, aimYaw, candidate));
+        rotations.reaim(this, yaw, pitch, TURN_RATE);
+        pending = polarClick(world, eyes, rotations.getServerYaw(), rotations.getServerPitch());
+    }
+
+    @EventTarget(priority = EventPriority.DRAIN - 1)
+    public void onPlace(EventUpdate event) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayerSP player = mc.thePlayer;
+        WorldClient world = mc.theWorld;
+        RotationManager rotations = RotationManager.getInstance();
+        if (!event.isPre() || polar() || player == null || world == null || mc.currentScreen != null
+                || !rotations.owns(this)) {
+            return;
+        }
+        if (telly() && (offGroundTicks < TELLY_PLACE_TICK || turn(rotations.getSentYaw(), rotations.getSentPitch(),
+                rotations.getServerYaw(), rotations.getServerPitch()) > MAX_PLACE_TURN)) {
+            return;
+        }
+        ItemStack held = player.getHeldItem();
+        Placement placement = clickAlong(world, player.getPositionEyes(1.0F), rotations.getServerLookVec());
+        if (held == null || !(held.getItem() instanceof ItemBlock)) {
+            return;
+        }
+        sendPlacement(mc, player, world, held, placement);
+    }
+
+    @EventTarget
+    public void onStrafe(EventStrafe event) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayerSP player = mc.thePlayer;
+        if (player == null) {
+            return;
+        }
+        boolean tellyMode = telly();
+        boolean jumping = tellyMode && autoJump(event, mc, player);
+        if (!tellyMode) {
+            SprintGuard.getInstance().suppress();
+        }
+
+        if (!jumping && safety.get() && EdgeUtil.isApproachingEdge(mc, player, EdgeUtil.MIN_PROBE)) {
+            event.applyForcedSneakSlowdown();
+        }
+    }
+
+    @EventTarget
+    public void onRender3D(EventRender3D event) {
+        Minecraft mc = Minecraft.getMinecraft();
+        Placement placement = pending;
+        if (!render.get() || mc.thePlayer == null || mc.theWorld == null || placement == null) {
+            return;
+        }
+        RenderUtil.drawTracerMarker(mc.thePlayer.getPositionEyes(event.getPartialTicks()), placement.hitVec,
+                MARKER_HALF, 255, 60, 60, 180, 90, 255, 2.0F);
+    }
+
+    private float aimHypixel(Minecraft mc, EntityPlayerSP player, float yaw, float current) {
+        WorldClient world = mc.theWorld;
+        Vec3 eyes = player.getPositionEyes(1.0F);
+        targets = candidateCells(player, world);
+        return scanPitch(current, SCAN_STEP, pitch -> clickAlong(world, eyes, RotationManager.lookVec(yaw, pitch)));
+    }
+
+    private void aimTelly(Minecraft mc, EntityPlayerSP player, RotationManager rotations, float yaw, float pitch,
+                          float move) {
+        boolean placing = offGroundTicks >= TELLY_PLACE_TICK;
+
+        if (player.onGround || Float.isNaN(tellyAnchor)) {
+            tellyAnchor = move;
+        }
+        float yawStep = RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(
+                tellyYaw(tellyAnchor, player.onGround, offGroundTicks) - yaw));
+        if (placing) {
+            float cap = floorToGcd(MAX_PLACE_TURN);
+            yawStep = MathHelper.clamp_float(yawStep, -cap, cap);
+        }
+
+        float aimYaw = offGroundTicks > 0 && !placing
+                ? tellyYaw(tellyAnchor, false, TELLY_PLACE_TICK) : yaw + yawStep;
+        targets = candidateCells(player, mc.theWorld);
+        pending = findPlacement(player, mc.theWorld, aimYaw);
+        float aimed = pending == null ? Float.NaN : aimPitch(player.getPositionEyes(1.0F), pending, aimYaw);
+        float pitchStep = Float.isNaN(aimed) ? 0.0F : RotationManager.gcdSnap(aimed - pitch);
+        if (placing) {
+            float budget = floorToGcd(MAX_PLACE_TURN - Math.abs(yawStep));
+            pitchStep = MathHelper.clamp_float(pitchStep, -budget, budget);
+        }
+        rotations.request(this, yaw + yawStep, pitch + pitchStep, PRIORITY, TURN_RATE);
+    }
+
+    private float scanPitch(float current, float spacing, Function<Float, Placement> click) {
+        float gcd = RotationManager.gcdStep();
+        float step = gcd * Math.max(1, Math.round(spacing / gcd));
+        float start = current + RotationManager.gcdSnap(SCAN_MIN_PITCH - current);
+        int bestRank = Integer.MAX_VALUE;
+        List<Float> hits = new ArrayList<>();
+        for (int i = 0; start + i * step <= 90.0F; i++) {
+            float pitch = start + i * step;
+            Placement placement = click.apply(pitch);
+            if (placement == null) {
+                continue;
+            }
+            int rank = targets.indexOf(placement.target);
+            if (rank < bestRank) {
+                bestRank = rank;
+                hits.clear();
+            }
+            if (rank == bestRank) {
+                hits.add(pitch);
+            }
+        }
+        if (hits.isEmpty()) {
+            pending = null;
+            return heldPitch;
+        }
+        Placement now = click.apply(current);
+        heldPitch = now != null && targets.indexOf(now.target) == bestRank ? current : hits.get(hits.size() / 2);
+        pending = click.apply(heldPitch);
+        return heldPitch;
+    }
+
+    private Placement clickAlong(WorldClient world, Vec3 eyes, Vec3 look) {
+        MovingObjectPosition hit = RayTraceUtil.traceToLook(world, eyes, look,
+                PlacementUtil.SERVER_REACH, false, false, true);
+        if (!RayTraceUtil.isBlockHit(hit)
+                || !world.getBlockState(hit.getBlockPos()).getBlock().getMaterial().isSolid()) {
+            return null;
+        }
+        BlockPos target = hit.getBlockPos().offset(hit.sideHit);
+        if (!targets.contains(target) || !world.getBlockState(target).getBlock().isReplaceable(world, target)
+                || !world.checkNoEntityCollision(new AxisAlignedBB(target, target.add(1, 1, 1)))) {
+            return null;
+        }
+        return new Placement(target, hit.getBlockPos(), hit.sideHit, hit.hitVec);
+    }
+
+    private Placement polarClick(WorldClient world, Vec3 eyes, float yaw, float pitch) {
+        Placement placement = clickAlong(world, eyes, RotationManager.lookVec(yaw, pitch));
+        if (placement == null) {
+            return null;
+        }
+        MovingObjectPosition exact = RayTraceUtil.traceToLook(world, eyes, exactLook(yaw, pitch),
+                PlacementUtil.SERVER_REACH, false, false, true);
+        return RayTraceUtil.matchesBlock(exact, placement.support, placement.face) ? placement : null;
+    }
+
     private boolean firePending(Minecraft mc, EntityPlayerSP player, WorldClient world, ItemStack held) {
-        RotationManager rm = RotationManager.getInstance();
-        if (!rm.owns(this)) {
+        RotationManager rotations = RotationManager.getInstance();
+        if (!rotations.owns(this)) {
             return false;
         }
-        // The place goes out before this tick's look packet, so it is the click the sent look makes.
-        Placement p = polarClick(world, player.getPositionEyes(1.0F), rm.getSentYaw(), rm.getSentPitch());
-        if (p == null || !ActionGuard.getInstance().tryReserveAfterCleanTick(this)) {
+
+        Placement placement = polarClick(world, player.getPositionEyes(1.0F), rotations.getSentYaw(), rotations.getSentPitch());
+        return sendPlacement(mc, player, world, held, placement)
+                && !world.getBlockState(placement.target).getBlock().isReplaceable(world, placement.target);
+    }
+
+    private boolean sendPlacement(Minecraft mc, EntityPlayerSP player, WorldClient world,
+                                  ItemStack held, Placement placement) {
+        if (placement == null || !ActionGuard.getInstance().tryReserveAfterCleanTick(this)) {
             return false;
         }
         PacketLog.getInstance().tagged("Scaffold", () -> {
-            if (mc.playerController.onPlayerRightClick(player, world, held, p.support, p.face, p.hitVec)) {
+            if (mc.playerController.onPlayerRightClick(player, world, held,
+                    placement.support, placement.face, placement.hitVec)) {
                 player.swingItem();
             }
         });
-        return !world.getBlockState(p.target).getBlock().isReplaceable(world, p.target);
+        return true;
     }
 
-    /** Switches before the held stack runs dry. */
     private void equipBlock(EntityPlayerSP player) {
         ItemStack held = player.getHeldItem();
         if (held != null && held.getItem() instanceof ItemBlock && held.stackSize > 1) {
@@ -505,11 +396,24 @@ public class Scaffold extends Module {
         }
     }
 
-    private Placement findPlacement(Minecraft mc, EntityPlayerSP player, WorldClient world, float yaw) {
-        RotationManager rm = RotationManager.getInstance();
+    private boolean autoJump(EventStrafe event, Minecraft mc, EntityPlayerSP player) {
+        ItemStack held = player.getHeldItem();
+        if (!player.onGround || !PlayerUtil.anyMoveKeyDown(mc)
+                || held == null || !(held.getItem() instanceof ItemBlock)) {
+            return false;
+        }
+        if (PlayerUtil.canVanillaSprint(player, event.getForward())) {
+            player.setSprinting(true);
+        }
+        player.movementInput.jump = true;
+        return true;
+    }
+
+    private Placement findPlacement(EntityPlayerSP player, WorldClient world, float yaw) {
+        RotationManager rotations = RotationManager.getInstance();
         Vec3 eyes = player.getPositionEyes(1.0F);
-        Vec3 look = rm.isActive() ? RotationMath.lookVector(rm.getServerPitch(), yaw) : null;
-        for (BlockPos target : candidateCells(mc, player, world)) {
+        Vec3 look = rotations.isActive() ? RotationMath.lookVector(rotations.getServerPitch(), yaw) : null;
+        for (BlockPos target : targets) {
             if (!world.getBlockState(target).getBlock().isReplaceable(world, target)) {
                 continue;
             }
@@ -524,7 +428,7 @@ public class Scaffold extends Module {
                 if (Float.isNaN(PlacementUtil.facePitch(eyes, candidate, yaw))) {
                     continue;
                 }
-                // Vanilla refuses a place into any live entity, the player included. Last, so it runs once.
+
                 if (!world.checkNoEntityCollision(new AxisAlignedBB(target, target.add(1, 1, 1)))) {
                     break;
                 }
@@ -534,42 +438,40 @@ public class Scaffold extends Module {
         return null;
     }
 
-    private static float aimPitch(Vec3 eyes, Placement p, float yaw) {
-        if (p.face != EnumFacing.UP) {
-            return PlacementUtil.facePitch(eyes, p, yaw);
+    private static float aimPitch(Vec3 eyes, Placement placement, float yaw) {
+        if (placement.face != EnumFacing.UP) {
+            return PlacementUtil.facePitch(eyes, placement, yaw);
         }
         return RotationMath.pitchTo(eyes.xCoord, eyes.yCoord, eyes.zCoord,
-                p.hitVec.xCoord, p.hitVec.yCoord, p.hitVec.zCoord);
+                placement.hitVec.xCoord, placement.hitVec.yCoord, placement.hitVec.zCoord);
     }
 
-    private Set<BlockPos> candidateCells(Minecraft mc, EntityPlayerSP player, WorldClient world) {
+    private List<BlockPos> candidateCells(EntityPlayerSP player, WorldClient world) {
         boolean ascend = !keepY.get() && rising;
         if (ascend || player.onGround || planeY == Integer.MIN_VALUE) {
             planeY = new BlockPos(player).down().getY();
         }
         Set<BlockPos> cells = new LinkedHashSet<>();
-        // The cell above the block you jumped from is the only raised cell the backward look can reach.
+
         if (ascend && ground != null) {
             cells.add(new BlockPos(ground.getX(), planeY, ground.getZ()));
         }
         BlockPos foot = cell(player, 0.0D, 0.0D);
         cells.add(foot);
-        // A foot cell with no support gets a stepping stone beside it.
+
         if (!telly() && needsCorner(world, foot)) {
             for (EnumFacing dir : EnumFacing.Plane.HORIZONTAL) {
                 cells.add(foot.offset(dir));
             }
         }
-        Vec3 travel = travel(player);
-        if (travel == null) {
-            return cells;
+        Vec3 travel = new Vec3(player.motionX, 0.0D, player.motionZ).normalize();
+        if (travel.lengthVector() != 0.0D) {
+            if (telly()) {
+                addAlong(world, cells, player, foot, travel, -1.0D, BACKFILL);
+            }
+            addAlong(world, cells, player, foot, travel, 1.0D, expand.get().intValue());
         }
-        if (telly()) {
-            // Cells crossed during the spin could not fire yet.
-            addAlong(world, cells, player, foot, travel, -1.0D, BACKFILL);
-        }
-        addAlong(world, cells, player, foot, travel, 1.0D, expand.get().intValue());
-        return cells;
+        return new ArrayList<>(cells);
     }
 
     private void addAlong(WorldClient world, Set<BlockPos> cells, EntityPlayerSP player,
@@ -582,11 +484,6 @@ public class Scaffold extends Module {
 
     private BlockPos cell(EntityPlayerSP player, double offsetX, double offsetZ) {
         return new BlockPos(player.posX + offsetX, planeY, player.posZ + offsetZ);
-    }
-
-    private static Vec3 travel(EntityPlayerSP player) {
-        Vec3 dir = new Vec3(player.motionX, 0.0D, player.motionZ).normalize();
-        return dir.lengthVector() == 0.0D ? null : dir;
     }
 
     private BlockPos addWithCorners(WorldClient world, Set<BlockPos> cells, BlockPos next, BlockPos prev) {
@@ -611,9 +508,28 @@ public class Scaffold extends Module {
         return true;
     }
 
+    private static BlockPos standingOn(WorldClient world, EntityPlayerSP player) {
+        AxisAlignedBB box = player.getEntityBoundingBox();
+        int y = MathHelper.floor_double(box.minY) - 1;
+        BlockPos best = new BlockPos(player.posX, y, player.posZ);
+        double bestDistance = Double.POSITIVE_INFINITY;
+        for (int x = MathHelper.floor_double(box.minX); x <= MathHelper.floor_double(box.maxX - 1.0E-7D); x++) {
+            for (int z = MathHelper.floor_double(box.minZ); z <= MathHelper.floor_double(box.maxZ - 1.0E-7D); z++) {
+                BlockPos pos = new BlockPos(x, y, z);
+                double dx = x + 0.5D - player.posX;
+                double dz = z + 0.5D - player.posZ;
+                if (dx * dx + dz * dz < bestDistance && world.getBlockState(pos).getBlock().getMaterial().isSolid()) {
+                    best = pos;
+                    bestDistance = dx * dx + dz * dz;
+                }
+            }
+        }
+        return best;
+    }
+
     private Vec3 lockedHitVec(BlockPos support, EnumFacing face, Vec3 eyes, Vec3 dir) {
         if (dir == null) {
-            return PlacementUtil.randomHitVec(rand, support, face);
+            return PlacementUtil.randomHitVec(random, support, face);
         }
         double reach = PlacementUtil.SERVER_REACH;
         Vec3 end = eyes.addVector(dir.xCoord * reach, dir.yCoord * reach, dir.zCoord * reach);
@@ -625,7 +541,7 @@ public class Scaffold extends Module {
             default: hit = eyes.getIntermediateWithZValue(end, support.getZ() + pin); break;
         }
         if (hit == null) {
-            return PlacementUtil.randomHitVec(rand, support, face);
+            return PlacementUtil.randomHitVec(random, support, face);
         }
         Random inset = new Random(MathHelper.getPositionRandom(support) ^ insetSalt ^ face.ordinal());
         EnumFacing.Axis axis = face.getAxis();
@@ -638,5 +554,73 @@ public class Scaffold extends Module {
     private static double clampFace(double v, int base, Random inset) {
         double in = inset.nextDouble() * CLAMP_JITTER;
         return MathHelper.clamp_double(v, base + PlacementUtil.HIT_BAND_MIN + in, base + PlacementUtil.HIT_BAND_MAX - in);
+    }
+
+    private boolean hypixel() {
+        return HYPIXEL.equals(mode.get());
+    }
+
+    private boolean polar() {
+        return POLAR.equals(mode.get());
+    }
+
+    private boolean telly() {
+        return TELLY.equals(mode.get());
+    }
+
+    private static float backward(float yaw) {
+        return MathHelper.wrapAngleTo180_float(yaw + 180.0F);
+    }
+
+    private static float avoidCornerYaw(float yaw) {
+        float step = RotationManager.gcdStep();
+        return 180.0F - Math.abs(MathHelper.wrapAngleTo180_float(4.0F * yaw)) < 2.0F * step
+                ? yaw + step : yaw;
+    }
+
+    static float polarYaw(float move, boolean straight, float side) {
+        float offset = straight ? side * POLAR_STRAIGHT_OFFSET : 0.0F;
+        return MathHelper.wrapAngleTo180_float(backward(move) + offset);
+    }
+
+    static boolean straightWalk(float moveYaw, boolean straight) {
+        float axisYaw = EnumFacing.fromAngle(moveYaw).getHorizontalIndex() * 90.0F;
+        float off = Math.abs(MathHelper.wrapAngleTo180_float(moveYaw - axisYaw));
+        return off <= (straight ? POLAR_LEAVE_AXIS : POLAR_ENTER_AXIS);
+    }
+
+    static float polarSide(double offsetX, double offsetZ, float moveYaw, float side) {
+        double axis = Math.toRadians(EnumFacing.fromAngle(moveYaw).getHorizontalIndex() * 90.0D);
+        double right = -offsetX * Math.cos(axis) - offsetZ * Math.sin(axis);
+        return Math.abs(right) > POLAR_SIDE_BAND ? Math.signum((float) right) : side;
+    }
+
+    static float tellyYaw(float moveYaw, boolean onGround, int offGroundTicks) {
+        if (onGround) {
+            return moveYaw;
+        }
+        if (offGroundTicks <= 1) {
+            return moveYaw - 120.0F;
+        }
+        if (offGroundTicks == 2) {
+            return moveYaw - 159.0F;
+        }
+        return moveYaw - 180.0F;
+    }
+
+    static float turn(float fromYaw, float fromPitch, float toYaw, float toPitch) {
+        return Math.abs(MathHelper.wrapAngleTo180_float(toYaw - fromYaw)) + Math.abs(toPitch - fromPitch);
+    }
+
+    private static float floorToGcd(float degrees) {
+        float gcd = RotationManager.gcdStep();
+        return Math.max(0.0F, (float) Math.floor((degrees - 0.001F) / gcd) * gcd);
+    }
+
+    private static Vec3 exactLook(float yaw, float pitch) {
+        double yawRad = Math.toRadians(yaw);
+        double pitchRad = Math.toRadians(pitch);
+        return new Vec3(-Math.sin(yawRad) * Math.cos(pitchRad), -Math.sin(pitchRad),
+                Math.cos(yawRad) * Math.cos(pitchRad));
     }
 }
