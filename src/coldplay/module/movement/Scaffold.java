@@ -115,7 +115,9 @@ public class Scaffold extends Module {
         polarStraight = true;
         ground = null;
         rising = false;
-        offGroundTicks = 0;
+        EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+        // Turned on mid-jump: the takeoff spin is long over, so Telly may aim and click at once
+        offGroundTicks = player != null && !player.onGround ? TELLY_PLACE_TICK : 0;
         tellyAnchor = Float.NaN;
     }
 
@@ -155,7 +157,7 @@ public class Scaffold extends Module {
             equipBlock(player);
         }
         ItemStack held = player.getHeldItem();
-        if (held == null || !(held.getItem() instanceof ItemBlock)) {
+        if (!isBlock(held)) {
             pending = null;
             return;
         }
@@ -234,11 +236,10 @@ public class Scaffold extends Module {
             return;
         }
         ItemStack held = player.getHeldItem();
-        Placement placement = clickAlong(world, player.getPositionEyes(1.0F), rotations.getServerLookVec());
-        if (held == null || !(held.getItem() instanceof ItemBlock)) {
-            return;
+        if (isBlock(held)) {
+            sendPlacement(mc, player, world, held,
+                    clickAlong(world, player.getPositionEyes(1.0F), rotations.getServerLookVec()));
         }
-        sendPlacement(mc, player, world, held, placement);
     }
 
     @EventTarget
@@ -293,8 +294,9 @@ public class Scaffold extends Module {
         pending = findPlacement(player, mc.theWorld, aimYaw);
         if (pending == null && offGroundTicks > 0) {
             // A key swap or camera turn moved the path off the anchored heading, so look back along the real path
-            float turnedYaw = backward(RotationMath.yawTo(0.0D, 0.0D, player.motionX, player.motionZ));
+            float turnedYaw = Float.NaN;
             if (player.motionX != 0.0D || player.motionZ != 0.0D) {
+                turnedYaw = backward(RotationMath.yawTo(0.0D, 0.0D, player.motionX, player.motionZ));
                 pending = findPlacement(player, mc.theWorld, turnedYaw);
             }
             if (pending == null) {
@@ -369,8 +371,7 @@ public class Scaffold extends Module {
             return null;
         }
         BlockPos target = hit.getBlockPos().offset(hit.sideHit);
-        if (!targets.contains(target) || !world.getBlockState(target).getBlock().isReplaceable(world, target)
-                || !world.checkNoEntityCollision(new AxisAlignedBB(target, target.add(1, 1, 1)))) {
+        if (!targets.contains(target) || !placeable(world, target)) {
             return null;
         }
         return new Placement(target, hit.getBlockPos(), hit.sideHit, hit.hitVec);
@@ -413,7 +414,7 @@ public class Scaffold extends Module {
 
     private void equipBlock(EntityPlayerSP player) {
         ItemStack held = player.getHeldItem();
-        if (held != null && held.getItem() instanceof ItemBlock && held.stackSize > 1) {
+        if (isBlock(held) && held.stackSize > 1) {
             return;
         }
         int slot = InvUtil.bestHotbarBlockSlot(player);
@@ -423,9 +424,7 @@ public class Scaffold extends Module {
     }
 
     private boolean autoJump(EventStrafe event, Minecraft mc, EntityPlayerSP player) {
-        ItemStack held = player.getHeldItem();
-        if (!player.onGround || !PlayerUtil.anyMoveKeyDown(mc)
-                || held == null || !(held.getItem() instanceof ItemBlock)) {
+        if (!player.onGround || !PlayerUtil.anyMoveKeyDown(mc) || !isBlock(player.getHeldItem())) {
             return false;
         }
         if (PlayerUtil.canVanillaSprint(player, event.getForward())) {
@@ -440,25 +439,19 @@ public class Scaffold extends Module {
         Vec3 eyes = player.getPositionEyes(1.0F);
         Vec3 look = rotations.isActive() ? RotationMath.lookVector(rotations.getServerPitch(), yaw) : null;
         for (BlockPos target : targets) {
-            if (!world.getBlockState(target).getBlock().isReplaceable(world, target)) {
+            if (!placeable(world, target)) {
                 continue;
             }
             for (EnumFacing dir : PlacementUtil.SUPPORT_ORDER) {
                 BlockPos support = target.offset(dir);
                 EnumFacing face = dir.getOpposite();
-                if (!world.getBlockState(support).getBlock().getMaterial().isSolid()
-                        || !PlacementUtil.sideClickLegal(face, support, eyes)) {
+                if (!clickable(world, support, face, eyes)) {
                     continue;
                 }
                 Placement candidate = new Placement(target, support, face, lockedHitVec(support, face, eyes, look));
-                if (Float.isNaN(PlacementUtil.facePitch(eyes, candidate, yaw))) {
-                    continue;
+                if (!Float.isNaN(PlacementUtil.facePitch(eyes, candidate, yaw))) {
+                    return candidate;
                 }
-
-                if (!world.checkNoEntityCollision(new AxisAlignedBB(target, target.add(1, 1, 1)))) {
-                    break;
-                }
-                return candidate;
             }
         }
         return null;
@@ -467,8 +460,7 @@ public class Scaffold extends Module {
     /** First target with a support face some other yaw can click, turning as little as possible from {@code yaw}. */
     private Placement findTurnedPlacement(WorldClient world, Vec3 eyes, float yaw, float pitch) {
         for (BlockPos target : targets) {
-            if (!world.getBlockState(target).getBlock().isReplaceable(world, target)
-                    || !world.checkNoEntityCollision(new AxisAlignedBB(target, target.add(1, 1, 1)))) {
+            if (!placeable(world, target)) {
                 continue;
             }
             Placement best = null;
@@ -476,9 +468,7 @@ public class Scaffold extends Module {
             for (EnumFacing dir : PlacementUtil.SUPPORT_ORDER) {
                 BlockPos support = target.offset(dir);
                 EnumFacing face = dir.getOpposite();
-                if (face.getAxis() == EnumFacing.Axis.Y
-                        || !world.getBlockState(support).getBlock().getMaterial().isSolid()
-                        || !PlacementUtil.sideClickLegal(face, support, eyes)) {
+                if (face.getAxis() == EnumFacing.Axis.Y || !clickable(world, support, face, eyes)) {
                     continue;
                 }
                 Placement candidate = new Placement(target, support, face, turnedHitVec(support, face, eyes, yaw, pitch));
@@ -517,7 +507,7 @@ public class Scaffold extends Module {
 
     /** Hit point on the side of the face's hit band nearer to {@code yaw}, at the height the current pitch reaches. */
     private Vec3 turnedHitVec(BlockPos support, EnumFacing face, Vec3 eyes, float yaw, float pitch) {
-        Random inset = new Random(MathHelper.getPositionRandom(support) ^ insetSalt ^ face.ordinal());
+        Random inset = insetRandom(support, face);
         boolean xFace = face.getAxis() == EnumFacing.Axis.X;
         double plane = (xFace ? support.getX() : support.getZ()) + 0.5D
                 + face.getAxisDirection().getOffset() * PlacementUtil.FACE_PIN;
@@ -548,6 +538,7 @@ public class Scaffold extends Module {
     }
 
     private List<BlockPos> candidateCells(EntityPlayerSP player, WorldClient world) {
+        boolean tellyMode = telly();
         boolean ascend = !keepY.get() && rising;
         if (ascend || player.onGround || planeY == Integer.MIN_VALUE) {
             planeY = new BlockPos(player).down().getY();
@@ -559,7 +550,7 @@ public class Scaffold extends Module {
         }
         BlockPos foot = cell(player, 0.0D, 0.0D);
         cells.add(foot);
-        if (telly()) {
+        if (tellyMode) {
             // Flying along a block edge leaves the hitbox over a second cell, which holds the player up just as well
             AxisAlignedBB box = player.getEntityBoundingBox();
             for (int x = MathHelper.floor_double(box.minX); x <= MathHelper.floor_double(box.maxX - 1.0E-7D); x++) {
@@ -569,14 +560,14 @@ public class Scaffold extends Module {
             }
         }
 
-        if (!telly() && needsCorner(world, foot)) {
+        if (!tellyMode && needsCorner(world, foot)) {
             for (EnumFacing dir : EnumFacing.Plane.HORIZONTAL) {
                 cells.add(foot.offset(dir));
             }
         }
         Vec3 travel = new Vec3(player.motionX, 0.0D, player.motionZ).normalize();
         if (travel.lengthVector() != 0.0D) {
-            if (telly()) {
+            if (tellyMode) {
                 addAlong(world, cells, player, foot, travel, -1.0D, BACKFILL);
             }
             addAlong(world, cells, player, foot, travel, 1.0D, expand.get().intValue());
@@ -604,6 +595,21 @@ public class Scaffold extends Module {
         }
         cells.add(next);
         return next;
+    }
+
+    /** Empty, and nothing standing in it. */
+    private static boolean placeable(WorldClient world, BlockPos target) {
+        return world.getBlockState(target).getBlock().isReplaceable(world, target)
+                && world.checkNoEntityCollision(new AxisAlignedBB(target, target.add(1, 1, 1)));
+    }
+
+    private static boolean clickable(WorldClient world, BlockPos support, EnumFacing face, Vec3 eyes) {
+        return world.getBlockState(support).getBlock().getMaterial().isSolid()
+                && PlacementUtil.sideClickLegal(face, support, eyes);
+    }
+
+    private static boolean isBlock(ItemStack stack) {
+        return stack != null && stack.getItem() instanceof ItemBlock;
     }
 
     private static boolean needsCorner(WorldClient world, BlockPos cell) {
@@ -653,12 +659,17 @@ public class Scaffold extends Module {
         if (hit == null) {
             return PlacementUtil.randomHitVec(random, support, face);
         }
-        Random inset = new Random(MathHelper.getPositionRandom(support) ^ insetSalt ^ face.ordinal());
+        Random inset = insetRandom(support, face);
         EnumFacing.Axis axis = face.getAxis();
         return new Vec3(
                 axis == EnumFacing.Axis.X ? hit.xCoord : clampFace(hit.xCoord, support.getX(), inset),
                 axis == EnumFacing.Axis.Y ? hit.yCoord : clampFace(hit.yCoord, support.getY(), inset),
                 axis == EnumFacing.Axis.Z ? hit.zCoord : clampFace(hit.zCoord, support.getZ(), inset));
+    }
+
+    /** The same face always gets the same inset within one enable. */
+    private Random insetRandom(BlockPos support, EnumFacing face) {
+        return new Random(MathHelper.getPositionRandom(support) ^ insetSalt ^ face.ordinal());
     }
 
     private static double clampFace(double v, int base, Random inset) {
