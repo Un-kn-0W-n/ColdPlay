@@ -56,12 +56,14 @@ public class ModuleManager {
         register(new coldplay.module.combat.Breaker(killAura::isWorking));
         register(new coldplay.module.combat.WTap());
         register(new coldplay.module.combat.KeepSprint());
+        register(new coldplay.module.combat.Criticals());
         register(new coldplay.module.combat.AutoThrow());
         register(new coldplay.module.combat.AutoHeal());
         register(new coldplay.module.combat.AutoClicker());
         register(new coldplay.module.combat.AntiMiss());
         register(new coldplay.module.combat.Reach());
         register(new coldplay.module.combat.BackTrack());
+        register(new coldplay.module.combat.FakeLag());
         register(new coldplay.module.movement.Sprint());
         register(new coldplay.module.movement.BridgeAssist());
         register(new coldplay.module.movement.Scaffold());

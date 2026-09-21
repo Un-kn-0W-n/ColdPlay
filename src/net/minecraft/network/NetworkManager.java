@@ -198,6 +198,18 @@ public class NetworkManager extends SimpleChannelInboundHandler<Packet> {
 			return;
 		}
 		coldplay.broker.PacketLog.getInstance().record(inPacket, true, recordingConnection); // ColdPlay
+		// ColdPlay >>> FakeLag hold, after validation so the tracked pose stays at issue time
+		if (this.direction == EnumPacketDirection.CLIENTBOUND
+				&& this.channel.attr(attrKeyConnectionState).get() == EnumConnectionState.PLAY
+				&& coldplay.broker.OutboundDelay.getInstance().hold(this, () -> this.writePacket(inPacket, futureListeners))) {
+			return;
+		}
+		this.writePacket(inPacket, futureListeners);
+	}
+
+	/** ColdPlay: the channel half of dispatchPacket, so a held packet skips validation when released. */
+	private void writePacket(final Packet inPacket, final GenericFutureListener<? extends Future<? super Void>>[] futureListeners) {
+		// ColdPlay <<<
 		final EnumConnectionState enumconnectionstate = EnumConnectionState.getFromPacket(inPacket);
 		final EnumConnectionState enumconnectionstate1 = this.channel.attr(attrKeyConnectionState).get();
 		if (enumconnectionstate1 != enumconnectionstate) {
