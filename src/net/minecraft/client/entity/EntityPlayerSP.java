@@ -171,6 +171,7 @@ public class EntityPlayerSP extends AbstractClientPlayer {
 			this.serverSneakState = flag1;
 		}
 		if (this.isCurrentViewEntity()) {
+			final boolean packetOnGround = this.onGround;
 			final double d0 = this.posX - this.lastReportedPosX;
 			final double d1 = this.getEntityBoundingBox().minY - this.lastReportedPosY;
 			final double d2 = this.posZ - this.lastReportedPosZ;
@@ -179,12 +180,12 @@ public class EntityPlayerSP extends AbstractClientPlayer {
 			boolean flag2 = d0 * d0 + d1 * d1 + d2 * d2 > 9.0E-4D || this.positionUpdateTicks >= 20;
 			final boolean flag3 = d3 != 0.0D || d4 != 0.0D;
 			if (this.ridingEntity == null) {
-				if (flag2 && flag3) this.sendQueue.addToSendQueue(new C03PacketPlayer.C06PacketPlayerPosLook(this.posX, this.getEntityBoundingBox().minY, this.posZ, sentYaw, sentPitch, this.onGround));
-				else if (flag2) this.sendQueue.addToSendQueue(new C03PacketPlayer.C04PacketPlayerPosition(this.posX, this.getEntityBoundingBox().minY, this.posZ, this.onGround));
-				else if (flag3) this.sendQueue.addToSendQueue(new C03PacketPlayer.C05PacketPlayerLook(sentYaw, sentPitch, this.onGround));
-				else this.sendQueue.addToSendQueue(new C03PacketPlayer(this.onGround));
+				if (flag2 && flag3) this.sendQueue.addToSendQueue(new C03PacketPlayer.C06PacketPlayerPosLook(this.posX, this.getEntityBoundingBox().minY, this.posZ, sentYaw, sentPitch, packetOnGround));
+				else if (flag2) this.sendQueue.addToSendQueue(new C03PacketPlayer.C04PacketPlayerPosition(this.posX, this.getEntityBoundingBox().minY, this.posZ, packetOnGround));
+				else if (flag3) this.sendQueue.addToSendQueue(new C03PacketPlayer.C05PacketPlayerLook(sentYaw, sentPitch, packetOnGround));
+				else this.sendQueue.addToSendQueue(new C03PacketPlayer(packetOnGround));
 			} else {
-				this.sendQueue.addToSendQueue(new C03PacketPlayer.C06PacketPlayerPosLook(this.motionX, -999.0D, this.motionZ, sentYaw, sentPitch, this.onGround));
+				this.sendQueue.addToSendQueue(new C03PacketPlayer.C06PacketPlayerPosLook(this.motionX, -999.0D, this.motionZ, sentYaw, sentPitch, packetOnGround));
 				flag2 = false;
 			}
 			++this.positionUpdateTicks;

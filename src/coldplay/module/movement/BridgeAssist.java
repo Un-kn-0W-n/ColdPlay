@@ -68,8 +68,6 @@ public class BridgeAssist extends Module {
             sneakHoldTicks = 0; // stepping forward ends the pulse
         }
     }
-
-    /** Any ItemBlock counts, slabs and stairs included. */
     private boolean isHoldingBlock(EntityPlayerSP player) {
         ItemStack stack = player.getHeldItem();
         return stack != null && stack.getItem() instanceof ItemBlock;
