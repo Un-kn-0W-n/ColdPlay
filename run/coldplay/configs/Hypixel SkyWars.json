@@ -9,9 +9,11 @@
         "Animals": false,
         "Invisible": false,
         "NPCs": false,
+        "Through Blocks": false,
         "Range": 4.5,
-        "FOV": 31.0,
-        "Level": "Aggressive"
+        "FOV": 180.0,
+        "Level": "Normal",
+        "Auto Off": true
       }
     },
     "AntiBot": {
@@ -28,7 +30,7 @@
       }
     },
     "AntiFireBall": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {}
     },
@@ -39,42 +41,20 @@
         "Players": true,
         "Mobs": false,
         "Animals": false,
-        "Invisible": false,
-        "NPCs": true,
-        "Target": "Health",
-        "Lock": "Switch",
-        "Rotation Speed": [
-          180.0,
-          180.0
-        ],
-        "Pitch Speed": [
-          180.0,
-          180.0
-        ],
-        "Yaw Acceleration": [
-          92.0,
-          100.0
-        ],
-        "Pitch Acceleration": [
-          91.0,
-          100.0
-        ],
-        "Yaw Deceleration": [
-          0.0,
-          0.0
-        ],
-        "Pitch Deceleration": [
-          0.0,
-          0.0
-        ],
-        "Rotation Range": 5.0,
-        "FOV": 360.0,
+        "Invisible": true,
+        "NPCs": false,
+        "Target": "Distance",
+        "Lock": "Single",
+        "Rotation Speed": 55.5,
+        "Humanize": true,
+        "Rotation Range": 4.5,
+        "FOV": 92.0,
         "CPS": [
-          14.0,
-          17.0
+          5.0,
+          10.0
         ],
-        "Range": 3.2,
-        "Raytrace": "Linear",
+        "Range": 3.0,
+        "Raytrace": "Center",
         "Render": false,
         "Graph Scale": 1.0,
         "Auto Off": true
@@ -84,9 +64,9 @@
       "enabled": false,
       "keyBind": 0,
       "settings": {
-        "Mode": "Blink",
-        "BlockTicks": 3.0,
-        "ReleaseTicks": 3.0,
+        "Mode": "Vanilla",
+        "BlockTicks": 5.0,
+        "ReleaseTicks": 2.0,
         "HoldTicks": 5.0,
         "BlinkTicks": 3.0,
         "Auto Off": false
@@ -110,18 +90,25 @@
       "keyBind": 0,
       "settings": {
         "Chance": 75.0,
-        "STap": true,
+        "STap": false,
         "Distance": 3.0
       }
     },
-    "AutoThrow": {
+    "KeepSprint": {
       "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Chance": 75.0
+      }
+    },
+    "AutoThrow": {
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Range": 4.5,
         "Delay": [
-          450.0,
-          750.0
+          500.0,
+          900.0
         ],
         "Throwables": {
           "FishingRod": true,
@@ -155,10 +142,10 @@
     },
     "AutoClicker": {
       "enabled": false,
-      "keyBind": 0,
+      "keyBind": 22,
       "settings": {
         "Button": "Left",
-        "Min CPS": 6.0,
+        "Min CPS": 5.0,
         "Max CPS": 9.0
       }
     },
@@ -179,8 +166,8 @@
       "keyBind": 0,
       "settings": {
         "Delay": [
-          25.0,
-          50.0
+          50.0,
+          75.0
         ],
         "Combat Timeout": 3.0,
         "Ghost Color": -44976,
@@ -193,7 +180,7 @@
       "settings": {}
     },
     "BridgeAssist": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 0,
       "settings": {
         "EdgeDistance": 0.3
@@ -203,11 +190,11 @@
       "enabled": false,
       "keyBind": 34,
       "settings": {
-        "Mode": "Hypixel",
+        "Mode": "Polar",
         "AutoSwitch": true,
         "KeepY": false,
         "Expand": 1.0,
-        "Safety": false,
+        "Safety": true,
         "Render": true,
         "Auto Off": false
       }
@@ -215,14 +202,10 @@
     "NoFall": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {
-        "MinFallDistance": 3.0,
-        "PlaceHeight": 3.0,
-        "Auto Off": false
-      }
+      "settings": {}
     },
     "AutoPearl": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 0,
       "settings": {
         "VoidDepth": 10.0,
@@ -232,12 +215,10 @@
     "InvMove": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {
-        "Mode": "Hypixel"
-      }
+      "settings": {}
     },
     "Velocity": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Mode": "Hypixel",
@@ -245,7 +226,7 @@
       }
     },
     "BlockAnimation": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {}
     },
@@ -270,7 +251,7 @@
       "enabled": true,
       "keyBind": 48,
       "settings": {
-        "Saved Gamma": 1.0
+        "Saved Gamma": 0.0
       }
     },
     "BlockESP": {
@@ -308,14 +289,14 @@
         "Tracers": true,
         "Tracer Mode": "Arrows",
         "Tracer Width": 0.5,
-        "Arrow Size": 6.0,
-        "Arrow Radius": 30.0,
+        "Arrow Size": 9.0,
+        "Arrow Radius": 39.0,
         "NameTags": true,
         "Players": true,
         "Mobs": false,
-        "Animals": true,
-        "Invisible": false,
-        "Range": 96.0,
+        "Animals": false,
+        "Invisible": true,
+        "Range": 256.0,
         "Player Color": -1,
         "Mob Color": -50116,
         "Animal Color": -11477916
@@ -368,10 +349,10 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Mode": "Hypixel",
+        "Mode": "Normal",
         "Delay": [
-          95.0,
-          130.0
+          85.0,
+          190.0
         ],
         "Auto Close": true,
         "Auto Off": false
@@ -387,7 +368,7 @@
       }
     },
     "FastPlace": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Delay": 0.0
@@ -472,17 +453,18 @@
       "keyBind": 0,
       "settings": {
         "Delay": [
-          100.0,
-          200.0
+          70.0,
+          130.0
         ],
         "AutoArmor": true,
-        "ArmorInstant": true,
+        "ArmorInstant": false,
         "AutoHotBar": true,
-        "HotbarInstant": true,
+        "HotbarInstant": false,
         "Layout": {
           "slots": [
             [
-              "@cat:Sword"
+              "@cat:Sword",
+              "@cat:Tools"
             ],
             [
               "minecraft:fishing_rod:0"
@@ -498,8 +480,7 @@
               "@cat:Potion"
             ],
             [
-              "minecraft:cooked_beef:0",
-              "minecraft:cooked_chicken:0"
+              "@cat:Food"
             ],
             [
               "minecraft:golden_apple:1",
@@ -550,7 +531,7 @@
           ]
         },
         "Cleaner": true,
-        "CleanerInstant": true,
+        "CleanerInstant": false,
         "Items": {
           "@cat:Armor": "DROP",
           "@cat:Blocks": "DROP",
