@@ -284,24 +284,50 @@ public class Scaffold extends Module {
         if (player.onGround || Float.isNaN(tellyAnchor)) {
             tellyAnchor = move;
         }
-        float yawStep = RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(
-                tellyYaw(tellyAnchor, player.onGround, offGroundTicks) - yaw));
-        if (placing) {
-            float cap = floorToGcd(MAX_PLACE_TURN);
-            yawStep = MathHelper.clamp_float(yawStep, -cap, cap);
-        }
+        float yawStep = tellyStep(yaw, player.onGround, placing);
 
         float aimYaw = offGroundTicks > 0 && !placing
                 ? tellyYaw(tellyAnchor, false, TELLY_PLACE_TICK) : yaw + yawStep;
+        Vec3 eyes = player.getPositionEyes(1.0F);
         targets = candidateCells(player, mc.theWorld);
         pending = findPlacement(player, mc.theWorld, aimYaw);
-        float aimed = pending == null ? Float.NaN : aimPitch(player.getPositionEyes(1.0F), pending, aimYaw);
+        if (pending == null && offGroundTicks > 0) {
+            // A key swap or camera turn moved the path off the anchored heading, so look back along the real path
+            float turnedYaw = backward(RotationMath.yawTo(0.0D, 0.0D, player.motionX, player.motionZ));
+            if (player.motionX != 0.0D || player.motionZ != 0.0D) {
+                pending = findPlacement(player, mc.theWorld, turnedYaw);
+            }
+            if (pending == null) {
+                pending = findTurnedPlacement(mc.theWorld, eyes, aimYaw, pitch);
+                if (pending != null) {
+                    turnedYaw = RotationMath.yawTo(eyes.xCoord, eyes.zCoord, pending.hitVec.xCoord, pending.hitVec.zCoord);
+                }
+            }
+            if (pending != null) {
+                aimYaw = turnedYaw;
+                if (placing) {
+                    tellyAnchor = aimYaw + 180.0F;
+                    yawStep = tellyStep(yaw, false, true);
+                }
+            }
+        }
+        float aimed = pending == null ? Float.NaN : aimPitch(eyes, pending, aimYaw);
         float pitchStep = Float.isNaN(aimed) ? 0.0F : RotationManager.gcdSnap(aimed - pitch);
         if (placing) {
             float budget = floorToGcd(MAX_PLACE_TURN - Math.abs(yawStep));
             pitchStep = MathHelper.clamp_float(pitchStep, -budget, budget);
         }
         rotations.request(this, yaw + yawStep, pitch + pitchStep, PRIORITY, TURN_RATE);
+    }
+
+    private float tellyStep(float yaw, boolean onGround, boolean placing) {
+        float step = RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(
+                tellyYaw(tellyAnchor, onGround, offGroundTicks) - yaw));
+        if (!placing) {
+            return step;
+        }
+        float cap = floorToGcd(MAX_PLACE_TURN);
+        return MathHelper.clamp_float(step, -cap, cap);
     }
 
     private float scanPitch(float current, float spacing, Function<Float, Placement> click) {
@@ -438,6 +464,81 @@ public class Scaffold extends Module {
         return null;
     }
 
+    /** First target with a support face some other yaw can click, turning as little as possible from {@code yaw}. */
+    private Placement findTurnedPlacement(WorldClient world, Vec3 eyes, float yaw, float pitch) {
+        for (BlockPos target : targets) {
+            if (!world.getBlockState(target).getBlock().isReplaceable(world, target)
+                    || !world.checkNoEntityCollision(new AxisAlignedBB(target, target.add(1, 1, 1)))) {
+                continue;
+            }
+            Placement best = null;
+            float bestTurn = Float.MAX_VALUE;
+            for (EnumFacing dir : PlacementUtil.SUPPORT_ORDER) {
+                BlockPos support = target.offset(dir);
+                EnumFacing face = dir.getOpposite();
+                if (face.getAxis() == EnumFacing.Axis.Y
+                        || !world.getBlockState(support).getBlock().getMaterial().isSolid()
+                        || !PlacementUtil.sideClickLegal(face, support, eyes)) {
+                    continue;
+                }
+                Placement candidate = new Placement(target, support, face, turnedHitVec(support, face, eyes, yaw, pitch));
+                float faceYaw = RotationMath.yawTo(eyes.xCoord, eyes.zCoord,
+                        candidate.hitVec.xCoord, candidate.hitVec.zCoord);
+                float facePitch = PlacementUtil.facePitch(eyes, candidate, faceYaw);
+                float turn = Math.abs(MathHelper.wrapAngleTo180_float(faceYaw - yaw));
+                if (!Float.isNaN(facePitch) && turn < bestTurn
+                        && clicksFace(world, eyes, faceYaw, facePitch, support, face)) {
+                    best = candidate;
+                    bestTurn = turn;
+                }
+            }
+            if (best != null) {
+                return best;
+            }
+        }
+        return null;
+    }
+
+    /** Whether the look, and every look one mouse step off it, lands on the face. */
+    private static boolean clicksFace(WorldClient world, Vec3 eyes, float yaw, float pitch,
+                                      BlockPos support, EnumFacing face) {
+        float gcd = RotationManager.gcdStep();
+        for (float lookYaw : new float[] {yaw, yaw - gcd, yaw + gcd}) {
+            for (float lookPitch : new float[] {pitch, pitch - gcd, pitch + gcd}) {
+                MovingObjectPosition hit = RayTraceUtil.traceToLook(world, eyes,
+                        RotationManager.lookVec(lookYaw, lookPitch), PlacementUtil.SERVER_REACH, false, false, true);
+                if (!RayTraceUtil.matchesBlock(hit, support, face)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /** Hit point on the side of the face's hit band nearer to {@code yaw}, at the height the current pitch reaches. */
+    private Vec3 turnedHitVec(BlockPos support, EnumFacing face, Vec3 eyes, float yaw, float pitch) {
+        Random inset = new Random(MathHelper.getPositionRandom(support) ^ insetSalt ^ face.ordinal());
+        boolean xFace = face.getAxis() == EnumFacing.Axis.X;
+        double plane = (xFace ? support.getX() : support.getZ()) + 0.5D
+                + face.getAxisDirection().getOffset() * PlacementUtil.FACE_PIN;
+        int base = xFace ? support.getZ() : support.getX();
+        double in = inset.nextDouble() * CLAMP_JITTER;
+        double low = base + PlacementUtil.HIT_BAND_MIN + in;
+        double high = base + PlacementUtil.HIT_BAND_MAX - in;
+        double along = bandTurn(eyes, plane, high, xFace, yaw) < bandTurn(eyes, plane, low, xFace, yaw) ? high : low;
+        double x = xFace ? plane : along;
+        double z = xFace ? along : plane;
+        double reach = Math.hypot(x - eyes.xCoord, z - eyes.zCoord);
+        double y = eyes.yCoord - reach * Math.tan(Math.toRadians(pitch));
+        return new Vec3(x, clampFace(y, support.getY(), inset), z);
+    }
+
+    private static float bandTurn(Vec3 eyes, double plane, double along, boolean xFace, float yaw) {
+        float bandYaw = xFace ? RotationMath.yawTo(eyes.xCoord, eyes.zCoord, plane, along)
+                : RotationMath.yawTo(eyes.xCoord, eyes.zCoord, along, plane);
+        return Math.abs(MathHelper.wrapAngleTo180_float(bandYaw - yaw));
+    }
+
     private static float aimPitch(Vec3 eyes, Placement placement, float yaw) {
         if (placement.face != EnumFacing.UP) {
             return PlacementUtil.facePitch(eyes, placement, yaw);
@@ -458,6 +559,15 @@ public class Scaffold extends Module {
         }
         BlockPos foot = cell(player, 0.0D, 0.0D);
         cells.add(foot);
+        if (telly()) {
+            // Flying along a block edge leaves the hitbox over a second cell, which holds the player up just as well
+            AxisAlignedBB box = player.getEntityBoundingBox();
+            for (int x = MathHelper.floor_double(box.minX); x <= MathHelper.floor_double(box.maxX - 1.0E-7D); x++) {
+                for (int z = MathHelper.floor_double(box.minZ); z <= MathHelper.floor_double(box.maxZ - 1.0E-7D); z++) {
+                    cells.add(new BlockPos(x, planeY, z));
+                }
+            }
+        }
 
         if (!telly() && needsCorner(world, foot)) {
             for (EnumFacing dir : EnumFacing.Plane.HORIZONTAL) {
