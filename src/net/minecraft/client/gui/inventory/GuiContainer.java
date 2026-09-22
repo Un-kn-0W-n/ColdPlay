@@ -25,10 +25,10 @@ public abstract class GuiContainer extends GuiScreen
     protected static final ResourceLocation inventoryBackground = new ResourceLocation("textures/gui/container/inventory.png");
 
     /** The X size of the inventory window in pixels. */
-    public int xSize = 176; // ColdPlay: public for EntityESP
+    public int xSize = 176; // ColdPlay: public for Arrows
 
     /** The Y size of the inventory window in pixels. */
-    public int ySize = 166; // ColdPlay: public for EntityESP
+    public int ySize = 166; // ColdPlay: public for Arrows
 
     /** A list of the players inventory slots */
     public Container inventorySlots;
@@ -36,12 +36,12 @@ public abstract class GuiContainer extends GuiScreen
     /**
      * Starting X position for the Gui. Inconsistent use for Gui backgrounds.
      */
-    public int guiLeft; // ColdPlay: public for EntityESP
+    public int guiLeft; // ColdPlay: public for Arrows
 
     /**
      * Starting Y position for the Gui. Inconsistent use for Gui backgrounds.
      */
-    public int guiTop; // ColdPlay: public for EntityESP
+    public int guiTop; // ColdPlay: public for Arrows
 
     /** holds the slot currently hovered */
     private Slot theSlot;

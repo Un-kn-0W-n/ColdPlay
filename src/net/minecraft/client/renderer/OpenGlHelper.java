@@ -23,7 +23,7 @@ public class OpenGlHelper {
     public static int GL_COLOR_ATTACHMENT0;
     public static int GL_DEPTH_ATTACHMENT;
     /** Combined depth+stencil attachment point (0x821A). 0 when the active FBO path has no single
-     *  depth-stencil attachment (EXT) or FBOs are unsupported; non-zero enables EntityESP's stencil outline. */
+     *  depth-stencil attachment (EXT) or FBOs are unsupported; non-zero enables ESP's stencil outline. */
     public static int GL_DEPTH_STENCIL_ATTACHMENT;
     public static int GL_FRAMEBUFFER_COMPLETE;
     public static int GL_FB_INCOMPLETE_ATTACHMENT;
@@ -233,7 +233,7 @@ public class OpenGlHelper {
 
             // Combined depth+stencil attachment point, set only for the GL30/ARB FBO paths (the EXT
             // path has no single depth-stencil attachment). Framebuffer reads this: non-zero means a
-            // packed GL_DEPTH24_STENCIL8 renderbuffer can be attached so EntityESP's Outline (stencil
+            // packed GL_DEPTH24_STENCIL8 renderbuffer can be attached so ESP's Outline (stencil
             // silhouette) mode has a stencil buffer to work with.
             if (framebufferType == 0 || framebufferType == 1) {
                 GL_DEPTH_STENCIL_ATTACHMENT = 33306;
