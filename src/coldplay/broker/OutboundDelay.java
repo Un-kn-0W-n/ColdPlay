@@ -5,23 +5,23 @@ import net.minecraft.network.NetworkManager;
 import java.util.ArrayDeque;
 import java.util.function.DoubleSupplier;
 
-/** FakeLag's hold on outgoing play packets. Each one reaches the channel once its delay has passed, in issue order. */
+/** FakeLag's pipe for the whole outgoing play stream. Every packet waits out its own delay and leaves in the order it was sent. */
 public final class OutboundDelay {
     private static final OutboundDelay INSTANCE = new OutboundDelay();
 
     private static final class Held {
         final NetworkManager connection;
         final Runnable write;
-        final long due;
+        final long holdUntil;
 
-        Held(NetworkManager connection, Runnable write, long due) {
+        Held(NetworkManager connection, Runnable write, long holdUntil) {
             this.connection = connection;
             this.write = write;
-            this.due = due;
+            this.holdUntil = holdUntil;
         }
     }
 
-    private final ArrayDeque<Held> held = new ArrayDeque<Held>();
+    private final ArrayDeque<Held> queue = new ArrayDeque<Held>();
     private DoubleSupplier delay;
 
     private OutboundDelay() {
@@ -31,23 +31,15 @@ public final class OutboundDelay {
         return INSTANCE;
     }
 
-    /** delay rolls one packet's delay in ms. */
+    /** delay rolls each packet's hold in ms. */
     public synchronized void start(DoubleSupplier delay) {
         this.delay = delay;
     }
 
     public synchronized void stop() {
         delay = null;
-        while (!held.isEmpty()) {
-            send(held.pollFirst());
-        }
-    }
-
-    /** A later packet with a shorter roll waits behind the ones before it. */
-    public synchronized void release() {
-        long now = System.nanoTime();
-        while (!held.isEmpty() && held.peekFirst().due - now <= 0L) {
-            send(held.pollFirst());
+        while (!queue.isEmpty()) {
+            send(queue.pollFirst());
         }
     }
 
@@ -56,14 +48,23 @@ public final class OutboundDelay {
         if (delay == null) {
             return false;
         }
-        held.addLast(new Held(connection, write, System.nanoTime() + (long) (delay.getAsDouble() * 1.0E6)));
+        // the deadline is pinned here so release only has to look at the head
+        queue.addLast(new Held(connection, write, System.nanoTime() + (long) (delay.getAsDouble() * 1.0E6)));
         return true;
     }
 
-    private static void send(Held entry) {
-        // packets held for a closed connection are dropped
-        if (entry.connection.isChannelOpen()) {
-            entry.write.run();
+    public synchronized void release() {
+        long now = System.nanoTime();
+        // strictly from the head: a later packet with a shorter roll waits its turn instead of jumping ahead
+        while (!queue.isEmpty() && queue.peekFirst().holdUntil - now <= 0L) {
+            send(queue.pollFirst());
+        }
+    }
+
+    private static void send(Held held) {
+        // held for a connection that has since closed, so it must not reach the next server
+        if (held.connection.isChannelOpen()) {
+            held.write.run();
         }
     }
 }

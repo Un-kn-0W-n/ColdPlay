@@ -9,11 +9,11 @@ import coldplay.setting.RangeSetting;
 
 public class FakeLag extends Module {
 
-    private final RangeSetting delay = add(new RangeSetting("Delay", 150.0, 250.0, 50.0, 1000.0, 25.0).unit("ms")
-            .describe("How late each of your packets reaches the server, rolled between the thumbs."));
+    private final RangeSetting delay = add(new RangeSetting("Delay", 250.0, 350.0, 50.0, 2000.0, 5.0).unit("ms")
+            .describe("How long each outgoing packet is held before it is sent, rolled between the thumbs."));
 
     public FakeLag() {
-        super("FakeLag", Category.COMBAT, "Sends your packets to the server late but in order, so everyone sees you lagging.");
+        super("FakeLag", Category.COMBAT, "Holds everything you send for a delay and lets it out in order, so you lag and your ping rises with it.");
         addAutoOff();
     }
 
@@ -36,7 +36,7 @@ public class FakeLag extends Module {
 
     @EventTarget
     public void onUpdate(EventUpdate event) {
-        if (event.isPre()) {
+        if (!event.isPre()) {
             OutboundDelay.getInstance().release();
         }
     }
