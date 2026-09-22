@@ -86,7 +86,7 @@ public class ModuleManager {
         register(new coldplay.module.utility.AutoTool());
         register(new coldplay.module.utility.FastPlace());
         register(new coldplay.module.utility.BedProtection());
-        register(new coldplay.module.utility.BedNotification());
+        register(new coldplay.module.utility.BedNotification(hudState));
         register(new coldplay.module.utility.MiddleClickFriend(persistence));
         register(new coldplay.module.utility.InvManager());
         register(new coldplay.module.utility.HumanRecorder(hudState));
