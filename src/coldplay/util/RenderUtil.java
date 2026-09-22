@@ -16,6 +16,8 @@ import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.Vec3;
 import org.lwjgl.opengl.GL11;
 
+import java.util.List;
+
 public final class RenderUtil {
 
     private RenderUtil() {
@@ -81,6 +83,31 @@ public final class RenderUtil {
                              int r, int g, int b, int a) {
         wr.pos(ax, ay, az).color(r, g, b, a).endVertex();
         wr.pos(bx, by, bz).color(r, g, b, a).endVertex();
+    }
+
+    /** One culled fill pass and one edge pass over every box. Sets up and restores the overlay state itself. */
+    public static void drawBoxes(List<AxisAlignedBB> boxes, int fillRgb, int fillAlpha, int lineRgb,
+                                 boolean filled, boolean outline, float lineWidth) {
+        Tessellator tessellator = Tessellator.getInstance();
+        WorldRenderer wr = tessellator.getWorldRenderer();
+        beginWorldOverlay(lineWidth);
+        if (filled) {
+            GlStateManager.enableCull(); // stop near/far faces double-blending
+            wr.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR);
+            for (AxisAlignedBB box : boxes) {
+                appendFilledBox(wr, box, (fillRgb >> 16) & 0xFF, (fillRgb >> 8) & 0xFF, fillRgb & 0xFF, fillAlpha);
+            }
+            tessellator.draw();
+            GlStateManager.disableCull();
+        }
+        if (outline) {
+            wr.begin(GL11.GL_LINES, DefaultVertexFormats.POSITION_COLOR);
+            for (AxisAlignedBB box : boxes) {
+                appendOutlineBox(wr, box, (lineRgb >> 16) & 0xFF, (lineRgb >> 8) & 0xFF, lineRgb & 0xFF, 255);
+            }
+            tessellator.draw();
+        }
+        endWorldOverlay();
     }
 
     /** Filled plus outlined box. Call between beginWorldOverlay and endWorldOverlay. */

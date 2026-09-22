@@ -254,44 +254,14 @@
         "Saved Gamma": 0.0
       }
     },
-    "BlockESP": {
+    "ESP": {
       "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Range": 80.0,
-        "Filled": true,
-        "Outline": true,
-        "Border Width": 2.0,
-        "Opacity": 81.0,
-        "Chests": true,
-        "Color": -3626496,
-        "Beds": true,
-        "Bed Color": -50116,
-        "Block Highlight": true,
-        "Highlight Mode": "Outline",
-        "Highlight Color": -1184275,
-        "Fade Duration": 1000.0,
-        "Max Blocks": 64.0,
-        "Items": true,
-        "Item Color": -16711736,
-        "NameTag": true
-      }
-    },
-    "EntityESP": {
-      "enabled": true,
-      "keyBind": 0,
-      "settings": {
-        "ESP": true,
         "Mode": "Chams",
         "Thickness": 1.0,
         "Filled": true,
         "Opacity": 93.0,
-        "Tracers": true,
-        "Tracer Mode": "Arrows",
-        "Tracer Width": 0.5,
-        "Arrow Size": 9.0,
-        "Arrow Radius": 39.0,
-        "NameTags": true,
         "Players": true,
         "Mobs": false,
         "Animals": false,
@@ -300,6 +270,94 @@
         "Player Color": -1,
         "Mob Color": -50116,
         "Animal Color": -11477916
+      }
+    },
+    "Tracers": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Width": 0.5,
+        "Players": true,
+        "Mobs": false,
+        "Animals": false,
+        "Invisible": true,
+        "Range": 256.0,
+        "Player Color": -1,
+        "Mob Color": -50116,
+        "Animal Color": -11477916
+      }
+    },
+    "Arrows": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Size": 9.0,
+        "Radius": 39.0,
+        "Players": true,
+        "Mobs": false,
+        "Animals": false,
+        "Invisible": true,
+        "Range": 256.0
+      }
+    },
+    "NameTags": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Players": true,
+        "Mobs": false,
+        "Animals": false,
+        "Invisible": true,
+        "Range": 256.0
+      }
+    },
+    "ChestESP": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Range": 80.0,
+        "Filled": true,
+        "Outline": true,
+        "Border Width": 2.0,
+        "Opacity": 81.0,
+        "Color": -3626496
+      }
+    },
+    "BedESP": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Range": 80.0,
+        "Filled": true,
+        "Outline": true,
+        "Border Width": 2.0,
+        "Opacity": 81.0,
+        "Color": -50116
+      }
+    },
+    "BlockHighlight": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Mode": "Outline",
+        "Color": -1184275,
+        "Border Width": 2.0,
+        "Opacity": 81.0,
+        "Fade Duration": 1000.0,
+        "Max Blocks": 64.0
+      }
+    },
+    "ItemESP": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Range": 80.0,
+        "Filled": true,
+        "Outline": true,
+        "Border Width": 2.0,
+        "Opacity": 81.0,
+        "Color": -16711736,
+        "NameTag": true
       }
     },
     "TargetHUD": {

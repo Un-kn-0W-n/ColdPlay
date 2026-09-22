@@ -76,8 +76,14 @@ public class ModuleManager {
                 clientName, clientVersion));
         register(new coldplay.module.visual.BlockCounter());
         register(new coldplay.module.visual.FullBright());
-        register(new coldplay.module.visual.BlockESP());
-        register(new coldplay.module.visual.EntityESP());
+        register(new coldplay.module.visual.ESP());
+        register(new coldplay.module.visual.Tracers());
+        register(new coldplay.module.visual.Arrows());
+        register(new coldplay.module.visual.NameTags());
+        register(new coldplay.module.visual.ChestESP());
+        register(new coldplay.module.visual.BedESP());
+        register(new coldplay.module.visual.BlockHighlight());
+        register(new coldplay.module.visual.ItemESP());
         register(new coldplay.module.visual.TargetHUD(hudState));
         register(new coldplay.module.visual.ArmorStatus(hudState));
         register(new coldplay.module.visual.Mirror(hudState));
