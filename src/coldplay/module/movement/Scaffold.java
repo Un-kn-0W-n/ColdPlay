@@ -64,6 +64,9 @@ public class Scaffold extends Module {
     private static final int TELLY_PLACE_TICK = 3;
     private static final int TELLY_CLIMB_TICK = 6;
     private static final float MAX_PLACE_TURN = 38.0F;
+    // MoveFix walks the back diagonal on air ticks 1 and 2, 135 degrees off the look, and air tick 1 still has
+    // sprint speed, so the 120/159 spin pushes sideways by this much each jump
+    private static final double TELLY_PUSH = 1.3D * Math.sin(Math.toRadians(15.0D)) - Math.sin(Math.toRadians(24.0D));
 
     private static final float POLAR_STRAIGHT_OFFSET = 45.0F;
     private static final float POLAR_ENTER_AXIS = 20.0F;
@@ -99,6 +102,8 @@ public class Scaffold extends Module {
 
     private int offGroundTicks;
     private float tellyAnchor = Float.NaN;
+    private float tellyFirst = 120.0F;
+    private float tellySecond = 159.0F;
     private float polarSide;
     private boolean polarStraight;
 
@@ -287,9 +292,12 @@ public class Scaffold extends Module {
             tellyAnchor = move;
         }
         float yawStep = tellyStep(yaw, player.onGround, placing);
+        if (player.onGround) {
+            rollTellySpin(yaw + yawStep);
+        }
 
         float aimYaw = offGroundTicks > 0 && !placing
-                ? tellyYaw(tellyAnchor, false, TELLY_PLACE_TICK) : yaw + yawStep;
+                ? tellyYaw(tellyAnchor, false, TELLY_PLACE_TICK, tellyFirst, tellySecond) : yaw + yawStep;
         Vec3 eyes = player.getPositionEyes(1.0F);
         targets = candidateCells(player, mc.theWorld);
         pending = findPlacement(player, mc.theWorld, aimYaw);
@@ -314,6 +322,12 @@ public class Scaffold extends Module {
                 }
             }
         }
+        if (pending == null && placing && landsNext(mc.theWorld, player)) {
+            // Nothing left to place before the landing, so start turning back a tick early
+            float part = RotationManager.gcdSnap(landingStep(yaw, move) * (0.35F + random.nextFloat() * 0.3F));
+            rotations.request(this, yaw + part, pitch, PRIORITY, TURN_RATE);
+            return;
+        }
         float aimed = pending == null ? Float.NaN : aimPitch(eyes, pending, aimYaw);
         float pitchStep = Float.isNaN(aimed) ? 0.0F : RotationManager.gcdSnap(aimed - pitch);
         if (placing) {
@@ -324,13 +338,51 @@ public class Scaffold extends Module {
     }
 
     private float tellyStep(float yaw, boolean onGround, boolean placing) {
+        if (onGround) {
+            return landingStep(yaw, tellyAnchor);
+        }
         float step = RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(
-                tellyYaw(tellyAnchor, onGround, offGroundTicks) - yaw));
+                tellyYaw(tellyAnchor, false, offGroundTicks, tellyFirst, tellySecond) - yaw));
         if (!placing) {
             return step;
         }
         float cap = floorToGcd(MAX_PLACE_TURN);
         return MathHelper.clamp_float(step, -cap, cap);
+    }
+
+    /** Turns onto the movement yaw back the way the air spin came, so the look never winds away from the camera. */
+    private static float landingStep(float yaw, float move) {
+        float step = RotationManager.gcdSnap(MathHelper.wrapAngleTo180_float(move - yaw));
+        // The broker would wrap a full 180 to -180, so stop one mouse step short of it
+        return Math.abs(step) > 178.0F ? Math.signum(move - yaw) * floorToGcd(180.0F) : step;
+    }
+
+    /** A new split of the same spin every jump, mirrored when the look sits a turn behind the camera. */
+    private void rollTellySpin(float yaw) {
+        float first = 118.0F + random.nextFloat() * 6.0F;
+        // Keeps the jump's sideways push equal to the 120/159 one
+        float second = 135.0F - (float) Math.toDegrees(Math.asin(
+                TELLY_PUSH - 1.3D * Math.sin(Math.toRadians(135.0F - first))));
+        float sign = yaw - tellyAnchor < -180.0F ? -1.0F : 1.0F;
+        tellyFirst = sign * first;
+        tellySecond = sign * second;
+    }
+
+    /** Whether the next move puts the feet on a solid block. */
+    private static boolean landsNext(WorldClient world, EntityPlayerSP player) {
+        if (player.motionY >= 0.0D) {
+            return false;
+        }
+        AxisAlignedBB box = player.getEntityBoundingBox().offset(player.motionX, player.motionY, player.motionZ);
+        int y = MathHelper.floor_double(box.minY);
+        for (int x = MathHelper.floor_double(box.minX); x <= MathHelper.floor_double(box.maxX - 1.0E-7D); x++) {
+            for (int z = MathHelper.floor_double(box.minZ); z <= MathHelper.floor_double(box.maxZ - 1.0E-7D); z++) {
+                if (world.getBlockState(new BlockPos(x, y, z)).getBlock().getMaterial().isSolid()) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private float scanPitch(float current, float spacing, Function<Float, Placement> click) {
@@ -718,15 +770,15 @@ public class Scaffold extends Module {
         return Math.abs(right) > POLAR_SIDE_BAND ? Math.signum((float) right) : side;
     }
 
-    static float tellyYaw(float moveYaw, boolean onGround, int offGroundTicks) {
+    static float tellyYaw(float moveYaw, boolean onGround, int offGroundTicks, float first, float second) {
         if (onGround) {
             return moveYaw;
         }
         if (offGroundTicks <= 1) {
-            return moveYaw - 120.0F;
+            return moveYaw - first;
         }
         if (offGroundTicks == 2) {
-            return moveYaw - 159.0F;
+            return moveYaw - second;
         }
         return moveYaw - 180.0F;
     }
