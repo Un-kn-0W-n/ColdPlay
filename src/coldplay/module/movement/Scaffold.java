@@ -62,6 +62,7 @@ public class Scaffold extends Module {
 
     private static final int BACKFILL = 3;
     private static final int TELLY_PLACE_TICK = 3;
+    private static final int TELLY_CLIMB_TICK = 6;
     private static final float MAX_PLACE_TURN = 38.0F;
 
     private static final float POLAR_STRAIGHT_OFFSET = 45.0F;
@@ -539,7 +540,8 @@ public class Scaffold extends Module {
 
     private List<BlockPos> candidateCells(EntityPlayerSP player, WorldClient world) {
         boolean tellyMode = telly();
-        boolean ascend = !keepY.get() && rising;
+        // Telly first lays the takeoff level ahead; the climb then clicks the top of those blocks
+        boolean ascend = !keepY.get() && rising && (!tellyMode || offGroundTicks >= TELLY_CLIMB_TICK);
         if (ascend || player.onGround || planeY == Integer.MIN_VALUE) {
             planeY = new BlockPos(player).down().getY();
         }
