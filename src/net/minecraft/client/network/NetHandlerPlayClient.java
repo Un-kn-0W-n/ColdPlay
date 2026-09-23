@@ -512,9 +512,22 @@ public class NetHandlerPlayClient implements INetHandlerPlayClient {
         entityplayer.setPositionAndRotation(d0, d1, d2, f, f1);
         coldplay.broker.SwordBlock.getInstance().reset(true);
         this.netManager.getPlayerPackets().reset();
-        this.netManager.sendPacket(new C03PacketPlayer.C06PacketPlayerPosLook(entityplayer.posX, entityplayer.getEntityBoundingBox().minY, entityplayer.posZ, entityplayer.rotationYaw, entityplayer.rotationPitch, false));
+        // ColdPlay >>> relative look keeps the spoof, confirm the look the server already has
+        coldplay.broker.RotationManager rotations = coldplay.broker.RotationManager.getInstance();
+        boolean keepSpoof = rotations.isActive()
+                && packetIn.func_179834_f().contains(S08PacketPlayerPosLook.EnumFlags.X_ROT)
+                && packetIn.func_179834_f().contains(S08PacketPlayerPosLook.EnumFlags.Y_ROT);
+        float confirmYaw = keepSpoof ? rotations.getSentYaw() + packetIn.getYaw() : entityplayer.rotationYaw;
+        float confirmPitch = keepSpoof ? rotations.getSentPitch() + packetIn.getPitch() : entityplayer.rotationPitch;
+        coldplay.broker.OutboundDelay.getInstance().dropMovement(this.netManager);
+        // ColdPlay <<<
+        this.netManager.sendPacket(new C03PacketPlayer.C06PacketPlayerPosLook(entityplayer.posX, entityplayer.getEntityBoundingBox().minY, entityplayer.posZ, confirmYaw, confirmPitch, false));
         this.gameController.thePlayer.markCurrentPositionAndRotationReported();
-        coldplay.broker.RotationManager.getInstance().resetAfterServerCorrection(this.gameController.thePlayer);
+        if (keepSpoof) {
+            this.gameController.thePlayer.markLookReported(confirmYaw, confirmPitch);
+        } else {
+            coldplay.broker.RotationManager.getInstance().resetAfterServerCorrection(this.gameController.thePlayer);
+        }
         if (!this.doneLoadingTerrain) {
             this.gameController.thePlayer.prevPosX = this.gameController.thePlayer.posX;
             this.gameController.thePlayer.prevPosY = this.gameController.thePlayer.posY;

@@ -1,11 +1,13 @@
 package coldplay.module.combat;
 
+import coldplay.ColdPlay;
 import coldplay.broker.OutboundDelay;
 import coldplay.event.EventTarget;
 import coldplay.event.EventUpdate;
 import coldplay.module.Category;
 import coldplay.module.Module;
 import coldplay.setting.RangeSetting;
+import net.minecraft.client.Minecraft;
 
 public class FakeLag extends Module {
 
@@ -36,6 +38,12 @@ public class FakeLag extends Module {
 
     @EventTarget
     public void onUpdate(EventUpdate event) {
+        Minecraft mc = Minecraft.getMinecraft();
+        // nothing to lag in the menus or singleplayer
+        if (mc.theWorld == null || mc.isSingleplayer()) {
+            ColdPlay.getInstance().getModuleManager().setEnabled(this, false);
+            return;
+        }
         if (!event.isPre()) {
             OutboundDelay.getInstance().release();
         }

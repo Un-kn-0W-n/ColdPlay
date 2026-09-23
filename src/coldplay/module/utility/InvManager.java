@@ -129,7 +129,7 @@ public class InvManager extends Module {
         worked = true;
         boolean instant = plan[3] == ARMOR ? armorInstant.get() : plan[3] == HOTBAR ? hotbarInstant.get() : cleanerInstant.get();
         int[] next = plan(c); // the click already applied locally
-        nextAt = System.currentTimeMillis() + (instant ? ThreadLocalRandom.current().nextLong(50, 110)
+        nextAt = System.currentTimeMillis() + (instant ? ThreadLocalRandom.current().nextLong(40, 160)
                 : InvUtil.moveDelayMs(delay.getLo(), delay.getHi(), c, plan[0], next == null ? -1 : next[0]));
     }
 

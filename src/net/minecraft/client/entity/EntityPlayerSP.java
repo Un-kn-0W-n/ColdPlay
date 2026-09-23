@@ -107,6 +107,12 @@ public class EntityPlayerSP extends AbstractClientPlayer {
 		this.positionUpdateTicks = 0;
 	}
 
+	/** ColdPlay: the look last sent when it was not the camera's. */
+	public void markLookReported(final float yaw, final float pitch) {
+		this.lastReportedYaw = yaw;
+		this.lastReportedPitch = pitch;
+	}
+
 	/**
 	 * Called when the entity is attacked.
 	 */

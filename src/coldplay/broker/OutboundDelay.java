@@ -1,6 +1,8 @@
 package coldplay.broker;
 
 import net.minecraft.network.NetworkManager;
+import net.minecraft.network.Packet;
+import net.minecraft.network.play.client.C03PacketPlayer;
 
 import java.util.ArrayDeque;
 import java.util.function.DoubleSupplier;
@@ -11,11 +13,13 @@ public final class OutboundDelay {
 
     private static final class Held {
         final NetworkManager connection;
+        final Packet packet;
         final Runnable write;
         final long holdUntil;
 
-        Held(NetworkManager connection, Runnable write, long holdUntil) {
+        Held(NetworkManager connection, Packet packet, Runnable write, long holdUntil) {
             this.connection = connection;
+            this.packet = packet;
             this.write = write;
             this.holdUntil = holdUntil;
         }
@@ -44,13 +48,18 @@ public final class OutboundDelay {
     }
 
     /** True when the packet was taken; write puts it on the channel later. */
-    public synchronized boolean hold(NetworkManager connection, Runnable write) {
+    public synchronized boolean hold(NetworkManager connection, Packet packet, Runnable write) {
         if (delay == null) {
             return false;
         }
         // the deadline is pinned here so release only has to look at the head
-        queue.addLast(new Held(connection, write, System.nanoTime() + (long) (delay.getAsDouble() * 1.0E6)));
+        queue.addLast(new Held(connection, packet, write, System.nanoTime() + (long) (delay.getAsDouble() * 1.0E6)));
         return true;
+    }
+
+    /** Drops held positions from before a setback, each one would reach the server after it and draw another. */
+    public synchronized void dropMovement(NetworkManager connection) {
+        queue.removeIf(held -> held.connection == connection && held.packet instanceof C03PacketPlayer);
     }
 
     public synchronized void release() {
