@@ -32,14 +32,13 @@ public class ChestStealer extends Module {
     private static final String NORMAL = "Normal";
     private static final String HYPIXEL = "Hypixel";
     private static final long OPEN_TIMEOUT_MS = 3000L;
-    private static final long SILENT_START_DELAY_MS = 100L;
     private static final long SILENT_TIMEOUT_MS = 5000L;
     private static final int PLAYER_SLOTS = 36;
 
     private final ModeSetting mode = add(new ModeSetting("Mode", NORMAL, NORMAL, HYPIXEL)
             .describe("Normal steals from the chest GUI. Hypixel keeps the chest hidden and takes everything in one tick."));
     private final RangeSetting delay = add(new RangeSetting("Delay", 120.0, 520.0, 50.0, 1000.0, 5.0)
-            .describe("Wait between item moves (ms): min for adjacent slots, max across the chest, plus random hesitation."));
+            .describe("Random wait (ms) before each item move, counted from when the chest opens."));
     private final BooleanSetting autoClose = add(new BooleanSetting("Auto Close", false)
             .describe("Close the chest once there is nothing left worth taking."));
 
@@ -135,8 +134,7 @@ public class ChestStealer extends Module {
             openedByPlayer = silent || usedChestRecently();
             lastChestUseAt = 0L;
             lastSlot = -1;
-            nextMoveAt = System.currentTimeMillis()
-                    + (silent ? SILENT_START_DELAY_MS : InvUtil.reactionDelayMs());
+            nextMoveAt = silent ? 0L : System.currentTimeMillis() + (long) delay.random();
         }
 
         if (!openedByPlayer || transactions.isRecovering() || player.inventory.getItemStack() != null
@@ -184,9 +182,7 @@ public class ChestStealer extends Module {
         }
 
         lastSlot = target.slotNumber;
-        Slot next = findNearestSlot(container, chestSlots, lastSlot);
-        nextMoveAt = System.currentTimeMillis() + InvUtil.moveDelayMs(delay.getLo(), delay.getHi(),
-                container, lastSlot, next == null ? -1 : next.slotNumber);
+        nextMoveAt = System.currentTimeMillis() + (long) delay.random();
     }
 
     private void closeSilentWindow(EntityPlayerSP player) {

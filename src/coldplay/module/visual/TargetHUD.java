@@ -6,6 +6,7 @@ import coldplay.event.EventHurt;
 import coldplay.event.EventRender2D;
 import coldplay.event.EventTarget;
 import coldplay.event.EventUpdate;
+import coldplay.gui.GlassShader;
 import coldplay.hud.HudState;
 import coldplay.module.Category;
 import coldplay.module.Module;
@@ -13,6 +14,7 @@ import coldplay.setting.BooleanSetting;
 import coldplay.setting.HeaderSetting;
 import coldplay.setting.NumberSetting;
 import coldplay.friend.FriendManager;
+import coldplay.util.Animation;
 import coldplay.util.EntityTargets;
 import coldplay.util.HealthResolver;
 import coldplay.util.RenderUtil;
@@ -20,6 +22,7 @@ import coldplay.util.font.CustomFont;
 import coldplay.util.font.Fonts;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.entity.AbstractClientPlayer;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.gui.inventory.GuiInventory;
@@ -27,36 +30,35 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.item.ItemStack;
+import net.minecraft.util.ColorMath;
 import net.minecraft.util.MathHelper;
+
+import java.awt.Color;
 
 /** Shows the entity last attacked, else the one under the crosshair, and holds it for Hold Time after it is lost. */
 public class TargetHUD extends Module {
     private final HudState hud;
 
-    private static final int COLOR_BOX = 0xF0101014;
-    private static final int COLOR_BORDER = 0xFFB9B9C2;
-    private static final int PAD = 4;      // panel inner padding
-    private static final int GAP = 2;      // vertical gap between rows in the info column
-    private static final int TEXT_PAD = 6; // min gap between the name and the health number
+    private static final int PAD = 5;
+    private static final int HEAD = 28;
+    private static final int HEAD_GAP = 6;
+    private static final int BAR_H = 5;
+    private static final int MIN_COL_W = 90;
+    private static final int TEXT_PAD = 8; // min gap between the name and the health number
+    private static final float RADIUS = 6.0F;
+    private static final float HEAD_RADIUS = 4.0F;
+    private static final float SHADOW = 8.0F;
 
-    // drawEntityOnScreen draws a player about scale * 1.8 px tall, so 18 fits inside DOLL_H
-    private static final int DOLL_W = 28;
-    private static final int DOLL_H = 36;
-    private static final int DOLL_SCALE = 18;
+    private static final int GLASS_TOP = 0xA0151820;
+    private static final int GLASS_BOTTOM = 0xC8070809;
+    private static final int RIM = 0x3CFFFFFF;
+    private static final int WELL = 0x40000000;
+    private static final int TRACK = 0x26FFFFFF;
+    private static final int TRAIL = 0x59FFFFFF;
+    private static final int TEXT = 0xFFF1F3F8;
+    private static final int HURT = 0xFFFF5A5A;
 
-    private static final int COLOR_WELL = 0xFF16181D;
-    private static final int ICON = 16;
-    private static final int ICON_GAP = 2;
-    private static final int DURABILITY_GAP = 1;
-    private static final int DURABILITY_H = 2;
-    private static final int BAR_BORDER = 2;
-    private static final int BAR_INNER_H = 3;
-    private static final int MIN_BAR_W = 60;
-
-    private final BooleanSetting showModel = add(new BooleanSetting("Show Model", true).describe("Render the target's 3D model in the panel."));
     private final BooleanSetting healthText = add(new BooleanSetting("Health Text", true).describe("Numeric health next to the name."));
-    private final BooleanSetting showIcons = add(new BooleanSetting("Held + Armor", true).describe("Row of the target's held item and worn armor."));
 
     // Filters apply to the crosshair source only; an attacked entity always shows.
     private final HeaderSetting targetsHeader = add(new HeaderSetting("Targets"));
@@ -73,9 +75,14 @@ public class TargetHUD extends Module {
     private EntityLivingBase combatTarget;
     private long combatTargetAt;
 
+    // the trail lags behind the bar to show the damage just taken
+    private final Animation bar = new Animation(1.0, 14.0);
+    private final Animation trail = new Animation(1.0, 3.0);
+    private EntityLivingBase animated;
+
     public TargetHUD(HudState hud) {
         super("TargetHUD", Category.VISUAL,
-                "Panel under the crosshair showing your combat target: model, real health, armor.");
+                "Glass panel under the crosshair showing your combat target's head and real health.");
         this.hud = hud;
         hud.registerScale("TargetHUD", scale);
     }
@@ -86,6 +93,7 @@ public class TargetHUD extends Module {
         lastSeenAt = 0L;
         combatTarget = null;
         combatTargetAt = 0L;
+        animated = null;
     }
 
     @EventTarget
@@ -151,40 +159,28 @@ public class TargetHUD extends Module {
         if (!Fonts.isLoaded()) {
             return;
         }
-        CustomFont font = Fonts.list;
+        CustomFont font = Fonts.medium;
 
         // Scoreboard health can exceed max health, so clamp the bar but show the raw value.
         float health = HealthResolver.resolve(shown);
         float fraction = MathHelper.clamp_float(
                 health / Math.max(1.0F, shown.getMaxHealth()), 0.0F, 1.0F);
+        if (shown != animated) {
+            animated = shown;
+            bar.set(fraction);
+            trail.set(fraction);
+        }
+        float barFraction = (float) bar.update(fraction);
+        float trailFraction = (float) trail.update(fraction);
         String name = shown.getName();
         String hp = healthText.get() ? String.format("%.1f", health) : null;
         int friendColor = FriendManager.getInstance().getColor(name);
 
-        ItemStack held = showIcons.get() ? shown.getHeldItem() : null;
-        ItemStack[] armor = new ItemStack[4];
-        int icons = held != null ? 1 : 0;
-        boolean hasArmor = false;
-        if (showIcons.get()) {
-            for (int slot = 0; slot < 4; slot++) {
-                armor[slot] = shown.getCurrentArmor(slot); // boots..helmet
-                if (armor[slot] != null) {
-                    icons++;
-                    hasArmor = true;
-                }
-            }
-        }
-
         // Unscaled units; Scale is a matrix pinned at the top-center anchor.
-        int rowW = icons > 0 ? icons * ICON + (icons - 1) * ICON_GAP : 0;
         int textW = font.getStringWidth(name) + (hp != null ? TEXT_PAD + font.getStringWidth(hp) : 0);
-        int colW = Math.max(MIN_BAR_W, Math.max(textW, rowW));
-        int dollW = showModel.get() ? DOLL_W + PAD : 0;
-        int panelW = PAD + dollW + colW + PAD;
-        int barH = BAR_INNER_H + BAR_BORDER * 2;
-        int equipmentH = ICON + (hasArmor ? DURABILITY_GAP + DURABILITY_H : 0);
-        int colH = font.getHeight() + GAP + barH + (icons > 0 ? GAP + equipmentH : 0);
-        int panelH = PAD + Math.max(colH, showModel.get() ? DOLL_H : 0) + PAD;
+        int colW = Math.max(MIN_COL_W, textW);
+        int panelW = PAD + HEAD + HEAD_GAP + colW + PAD;
+        int panelH = PAD + HEAD + PAD;
 
         ScaledResolution resolution = event.getResolution();
         // default sits 10px below the crosshair sprite
@@ -203,61 +199,42 @@ public class TargetHUD extends Module {
         }
         RenderUtil.pushScale(anchorX, top, s);
 
-        RenderUtil.drawBorderedRect(left, top, right, bottom, COLOR_BOX, COLOR_BORDER);
+        GlassShader.panel(left, top, panelW, panelH, RADIUS, GLASS_TOP, GLASS_BOTTOM, RIM, SHADOW);
 
-        int colX = left + PAD + dollW;
-        int textY = top + PAD;
-        font.drawStringWithShadow(name, colX, textY, friendColor != 0 ? friendColor : 0xFFFFFFFF);
+        int headX = left + PAD;
+        int headY = top + PAD;
+        int colX = headX + HEAD + HEAD_GAP;
+        int textY = headY + 2;
+        int color = Color.HSBtoRGB(fraction / 3.0F, 0.62F, 0.96F); // red to green through yellow
+        font.drawString(name, colX, textY, friendColor != 0 ? friendColor : TEXT);
         if (hp != null) {
-            font.drawStringWithShadow(hp, colX + colW - font.getStringWidth(hp), textY,
-                    RenderUtil.lerpRedGreen(fraction));
+            font.drawString(hp, colX + colW - font.getStringWidth(hp), textY, color);
         }
 
-        int barTop = textY + font.getHeight() + GAP;
-        int barBottom = barTop + barH;
-        RenderUtil.outline(colX, barTop, colX + colW, barBottom, BAR_BORDER,
-                friendColor != 0 ? friendColor : 0xFF000000);
-        int fillWidth = Math.round((colW - BAR_BORDER * 2) * fraction);
-        RenderUtil.rectBounds(colX + BAR_BORDER, barTop + BAR_BORDER,
-                colX + BAR_BORDER + fillWidth, barBottom - BAR_BORDER,
-                RenderUtil.lerpRedGreen(fraction));
+        int barY = headY + HEAD - BAR_H - 1;
+        GlassShader.rect(colX, barY, colW, BAR_H, BAR_H / 2.0F, TRACK, TRACK);
+        GlassShader.rect(colX, barY, colW * trailFraction, BAR_H, BAR_H / 2.0F, TRAIL, TRAIL);
+        GlassShader.rect(colX, barY, colW * barFraction, BAR_H, BAR_H / 2.0F,
+                Color.HSBtoRGB(fraction / 3.0F, 0.70F, 0.70F), color);
 
-        // held item first, then armor boots..helmet
-        if (icons > 0) {
-            int iconY = barBottom + GAP;
-            int cursorX = colX;
-            if (held != null) {
-                RenderUtil.drawItem(held, cursorX, iconY);
-                cursorX += ICON + ICON_GAP;
-            }
-            for (ItemStack piece : armor) {
-                if (piece == null) {
-                    continue;
-                }
-                RenderUtil.drawItem(piece, cursorX, iconY);
-                if (piece.isItemStackDamageable()) {
-                    float durability = MathHelper.clamp_float(
-                            1.0F - (float) piece.getItemDamage() / Math.max(1, piece.getMaxDamage()),
-                            0.0F, 1.0F);
-                    int durabilityY = iconY + ICON + DURABILITY_GAP;
-                    RenderUtil.rect(cursorX, durabilityY, ICON, DURABILITY_H, COLOR_WELL);
-                    RenderUtil.rect(cursorX, durabilityY, Math.round(ICON * durability), DURABILITY_H,
-                            RenderUtil.lerpRedGreen(durability));
-                }
-                cursorX += ICON + ICON_GAP;
-            }
-        }
-
-        // Drawn last so its depth writes cannot occlude the flat panel.
-        if (showModel.get()) {
-            // shrink tall mobs to fit the column
-            int dollScale = (int) (DOLL_SCALE * Math.min(1.0F, 1.8F / Math.max(0.5F, shown.height)));
+        if (shown instanceof AbstractClientPlayer) {
+            int tint = ColorMath.lerpArgb(0xFFFFFFFF, HURT, shown.hurtTime / 10.0F);
+            Minecraft.getMinecraft().getTextureManager().bindTexture(((AbstractClientPlayer) shown).getLocationSkin());
+            GlassShader.image(headX, headY, HEAD, HEAD, HEAD_RADIUS, 0.125F, 0.125F, 0.25F, 0.25F, tint); // face
+            GlassShader.image(headX, headY, HEAD, HEAD, HEAD_RADIUS, 0.625F, 0.125F, 0.75F, 0.25F, tint); // hat layer
+        } else {
+            // Mob skins share no face layout, so crop the top of the model instead.
+            GlassShader.rect(headX, headY, HEAD, HEAD, HEAD_RADIUS, WELL, WELL);
+            int modelScale = Math.round(HEAD / Math.max(0.5F, Math.min(shown.width, shown.height)));
+            RenderUtil.beginScissor(anchorX + (headX - anchorX) * s, top + (headY - top) * s,
+                    HEAD * s, HEAD * s, resolution.getScaleFactor());
             GlStateManager.enableDepth(); // limb self-occlusion needs the depth test
-            GuiInventory.drawEntityOnScreen(left + PAD + DOLL_W / 2, bottom - PAD - 1, // posY = feet
-                    dollScale, 0.0F, 0.0F, shown);
+            GuiInventory.drawEntityOnScreen(headX + HEAD / 2, headY + 2 + Math.round(shown.height * modelScale),
+                    modelScale, 0.0F, 0.0F, shown);
             // drawEntityOnScreen leaves colorMaterial enabled
             GlStateManager.disableColorMaterial();
             GlStateManager.disableDepth();
+            RenderUtil.endScissor();
         }
 
         GlStateManager.popMatrix();
