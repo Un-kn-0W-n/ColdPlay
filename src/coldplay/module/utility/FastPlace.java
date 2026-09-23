@@ -9,6 +9,7 @@ import coldplay.setting.NumberSetting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.MovingObjectPosition;
 
 public class FastPlace extends Module {
 
@@ -32,6 +33,10 @@ public class FastPlace extends Module {
 
         ItemStack held = mc.thePlayer.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemBlock)) {
+            return;
+        }
+        // aimed at air a held click is a use-item packet every tick
+        if (mc.objectMouseOver == null || mc.objectMouseOver.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) {
             return;
         }
 

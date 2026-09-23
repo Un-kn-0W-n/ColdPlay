@@ -13,11 +13,11 @@ import net.minecraft.entity.EntityLivingBase;
 
 /** Hops with real jumps while you trade hits, so most hits land while falling and crit. */
 public class Criticals extends Module {
-    private static final String HYPIXEL = "Hypixel";
+    private static final String LEGIT = "Legit";
     private static final int COMBAT_TICKS = 15; // one hurt window plus slack
 
-    public final ModeSetting mode = add(new ModeSetting("Mode", HYPIXEL, HYPIXEL)
-            .describe("Hypixel hops with vanilla jumps while you are hitting something."));
+    public final ModeSetting mode = add(new ModeSetting("Mode", LEGIT, LEGIT)
+            .describe("Legit hops with vanilla jumps while you are hitting something."));
 
     private int combatTicks;
 
@@ -43,8 +43,10 @@ public class Criticals extends Module {
             return;
         }
         combatTicks--;
-        EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-        if (player.onGround) {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayerSP player = mc.thePlayer;
+        // an open screen releases every key in vanilla, so no jump
+        if (player.onGround && mc.currentScreen == null) {
             // vanilla's jump gate consumes this later in the same tick
             player.movementInput.jump = true;
         }

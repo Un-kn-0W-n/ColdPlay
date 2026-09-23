@@ -202,7 +202,7 @@ public class NetworkManager extends SimpleChannelInboundHandler<Packet> {
 		// ColdPlay >>> FakeLag hold, after validation so the tracked pose stays at issue time
 		if (this.direction == EnumPacketDirection.CLIENTBOUND
 				&& this.channel.attr(attrKeyConnectionState).get() == EnumConnectionState.PLAY
-				&& coldplay.broker.OutboundDelay.getInstance().hold(this, () -> this.writePacket(inPacket, futureListeners))) {
+				&& coldplay.broker.OutboundDelay.getInstance().hold(this, inPacket, () -> this.writePacket(inPacket, futureListeners))) {
 			return;
 		}
 		this.writePacket(inPacket, futureListeners);
