@@ -2,9 +2,11 @@ package coldplay.gui.click;
 
 import coldplay.ColdPlay;
 import coldplay.config.ConfigManager;
-import coldplay.gui.Theme;
-import coldplay.gui.CustomSearchField;
 import coldplay.gui.CustomTextInput;
+import coldplay.gui.Glass;
+import coldplay.gui.GlassShader;
+import coldplay.gui.GuiStyle;
+import coldplay.gui.Icons;
 import coldplay.gui.hud.HudEditScreen;
 import coldplay.module.Category;
 import coldplay.module.Module;
@@ -14,7 +16,6 @@ import coldplay.util.font.Fonts;
 
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.util.MathHelper;
 import org.lwjglx.input.Keyboard;
 import org.lwjglx.input.Mouse;
 
@@ -22,21 +23,22 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+/** Smoke Click GUI: one glass panel per category, settings docked beside the clicked module. */
 public class ClickGuiScreen extends GuiScreen {
 
-    public static final int HEADER_HEIGHT = 17;
-    public static final int ROW_HEIGHT = 16;
-    public static final int FALLBACK_WIDTH = 116;
-    private static final int MARGIN = 6;
-    private static final int SETTINGS_BTN_WIDTH = 70;
-    private static final int SEARCH_BOX_WIDTH = 90;
-    private static final String[] FLYOUT_ROWS = {"Config", "Edit GUI"}; // bottom-up; mouseClicked hard-codes the same order
-
-    public static final int CLOSE_W = 13;
-
-    private static final int TOOLTIP_PAD = 5;
-    private static final int TOOLTIP_MAX_WIDTH = 160;
-    private static final int TOOLTIP_LINE_GAP = 1;
+    public static final int HEADER_HEIGHT = 24;
+    public static final int ROW_HEIGHT = 19;
+    private static final int MARGIN = 18;
+    private static final int PANEL_GAP = 12;
+    private static final int BUTTON_H = 22;
+    private static final int SEARCH_W = 150;
+    private static final int FLYOUT_W = 104;
+    private static final int FLYOUT_ROW = 20;
+    private static final float RADIUS = 6.0F;
+    private static final int DIM = 0x38000000;
+    // top to bottom; Config sits nearest the button
+    private static final String[] FLYOUT_ROWS = {"Milk GUI", "Edit GUI", "Config"};
+    private static final Icons.Icon[] FLYOUT_ICONS = {Icons.Icon.SNOWFLAKE, Icons.Icon.LAYOUT, Icons.Icon.SLIDERS};
 
     private final List<CategoryPanel> panels = new ArrayList<CategoryPanel>();
     private SettingsPanel settingsPanel;
@@ -71,7 +73,7 @@ public class ClickGuiScreen extends GuiScreen {
             }
             panel.clampToScreen(this.width, this.height);
             panels.add(panel);
-            cursorX += panel.getWidth() + MARGIN;
+            cursorX += panel.getWidth() + PANEL_GAP;
         }
     }
 
@@ -80,33 +82,34 @@ public class ClickGuiScreen extends GuiScreen {
         Fonts.load();
         updateActiveDrags(mouseX, mouseY);
         int scaleFactor = new ScaledResolution(this.mc).getScaleFactor();
-        RenderUtil.rectBounds(0, 0, this.width, this.height, Theme.DIM_SCREEN);
+        RenderUtil.rectBounds(0, 0, this.width, this.height, DIM);
         // the docked pair renders last, on top
         CategoryPanel dockHost = settingsPanel != null ? settingsPanel.getDockHost() : null;
+        Module selected = settingsPanel != null ? settingsPanel.getModule() : null;
         for (CategoryPanel panel : panels) {
             if (panel != dockHost) {
-                panel.render(mouseX, mouseY, listeningModule, scaleFactor);
+                panel.render(mouseX, mouseY, listeningModule, selected, scaleFactor);
             }
         }
+        if (dockHost != null) {
+            dockHost.render(mouseX, mouseY, listeningModule, selected, scaleFactor);
+        }
         if (settingsPanel != null) {
-            if (dockHost != null) {
-                renderDockedPair(dockHost, mouseX, mouseY, scaleFactor);
-            } else {
-                settingsPanel.render(mouseX, mouseY, scaleFactor);
-            }
+            settingsPanel.render(mouseX, mouseY, scaleFactor);
             // overlays go above the cell fills
             settingsPanel.renderItems(mouseX, mouseY);
             settingsPanel.renderDragGhost();
             settingsPanel.renderColorPicker(mouseX, mouseY);
         }
         drawSettingsButton(mouseX, mouseY);
-        drawSearchBox(mouseX, mouseY);
-        String tip = resolveTooltip(mouseX, mouseY);
-        if (tip != null && !tip.isEmpty()) {
-            drawTooltip(tip, mouseX, mouseY);
-        }
+        drawSearchBox();
         if (configWindow != null) {
             configWindow.render(mouseX, mouseY);
+            return;
+        }
+        String tip = resolveTooltip(mouseX, mouseY);
+        if (tip != null && !tip.isEmpty()) {
+            Widgets.tooltip(Skin.SMOKE, tip, mouseX, mouseY, this.width, this.height);
         }
     }
 
@@ -123,106 +126,42 @@ public class ClickGuiScreen extends GuiScreen {
         }
     }
 
-    private void renderDockedPair(CategoryPanel host, int mouseX, int mouseY, int scaleFactor) {
-        host.renderContent(mouseX, mouseY, listeningModule, scaleFactor);
-        settingsPanel.renderContent(mouseX, mouseY, scaleFactor);
-        if (!settingsPanel.isFlush()) {
-            host.renderChrome();
-            settingsPanel.renderChrome();
-            return;
-        }
-        drawHeaderRule(host.getX(), host.getY(), host.getWidth());
-        if (settingsPanel.getEffectiveWidth() > 0) {
-            drawHeaderRule(settingsPanel.getEffectiveX(), settingsPanel.getY(),
-                    settingsPanel.getEffectiveWidth());
-        }
-        drawDockedContour(host.getX(), host.getY(), host.getWidth(), host.getVisualHeight(),
-                settingsPanel.getEffectiveX(), settingsPanel.getY(),
-                settingsPanel.getEffectiveWidth(), settingsPanel.getHeight(),
-                settingsPanel.isDockRight(), Theme.CONTOUR);
-        if (settingsPanel.getEffectiveWidth() > 0) {
-            int seam = settingsPanel.isDockRight() ? host.getX() + host.getWidth() : host.getX();
-            RenderUtil.rect(seam - 1, settingsPanel.getY(), Theme.TICK_PX, ROW_HEIGHT, Theme.FROST);
-        }
+    private int buttonWidth() {
+        return Math.round(9 + 10.5F + 6 + Skin.SMOKE.label.get().getStringWidth("Settings") + 9);
     }
 
-    // Outlines the docked pair as one shape; the shared seam is never drawn.
-    private static void drawDockedContour(int cx, int cy, int cw, int ch,
-                                          int sx, int sy, int sw, int sh,
-                                          boolean rightDock, int color) {
-        int cRight = cx + cw;
-        int cBot = cy + ch;
-        if (sw <= 0) {
-            RenderUtil.outline(cx, cy, cRight, cBot, 1, color);
-            return;
-        }
-        int sRight = sx + sw;
-        int sBot = sy + sh;
+    private int buttonY() {
+        return this.height - MARGIN - BUTTON_H;
+    }
 
-        RenderUtil.hLine(cx, cRight, cy, color);
-        if (rightDock) {
-            RenderUtil.vLine(cx, cy, cBot, color);
-            RenderUtil.vLine(cRight - 1, cy, sy, color);
-            RenderUtil.hLine(cRight - 1, sRight, sy, color);
-            RenderUtil.vLine(sRight - 1, sy, sBot, color);
-            if (sBot < cBot) {
-                RenderUtil.hLine(cRight - 1, sRight, sBot - 1, color);
-                RenderUtil.vLine(cRight - 1, sBot, cBot, color);
-                RenderUtil.hLine(cx, cRight, cBot - 1, color);
-            } else if (sBot > cBot) {
-                RenderUtil.hLine(cx, cRight, cBot - 1, color);
-                RenderUtil.vLine(sx, cBot - 1, sBot, color);
-                RenderUtil.hLine(sx, sRight, sBot - 1, color);
-            } else {
-                RenderUtil.hLine(cx, sRight, cBot - 1, color);
-            }
-        } else {
-            RenderUtil.vLine(cRight - 1, cy, cBot, color);
-            RenderUtil.vLine(cx, cy, sy, color);
-            RenderUtil.hLine(sx, cx + 1, sy, color);
-            RenderUtil.vLine(sx, sy, sBot, color);
-            if (sBot < cBot) {
-                RenderUtil.hLine(sx, cx + 1, sBot - 1, color);
-                RenderUtil.vLine(cx, sBot, cBot, color);
-                RenderUtil.hLine(cx, cRight, cBot - 1, color);
-            } else if (sBot > cBot) {
-                RenderUtil.hLine(cx, cRight, cBot - 1, color);
-                RenderUtil.vLine(cx - 1, cBot - 1, sBot, color);
-                RenderUtil.hLine(sx, cx, sBot - 1, color);
-            } else {
-                RenderUtil.hLine(sx, cRight, cBot - 1, color);
-            }
-        }
+    private int flyoutY() {
+        return buttonY() - 4 - FLYOUT_ROWS.length * FLYOUT_ROW - 6;
     }
 
     private void drawSettingsButton(int mouseX, int mouseY) {
-        CustomFont font = Fonts.medium;
-        int btnX = MARGIN;
-        int btnY = this.height - HEADER_HEIGHT - MARGIN;
-        boolean hover = RenderUtil.hovered(mouseX, mouseY, btnX, btnY, SETTINGS_BTN_WIDTH, HEADER_HEIGHT);
-        RenderUtil.rect(btnX, btnY, SETTINGS_BTN_WIDTH, HEADER_HEIGHT, Theme.BODY);
-        if (hover) {
-            RenderUtil.rect(btnX, btnY, SETTINGS_BTN_WIDTH, HEADER_HEIGHT, Theme.HOVER_LIFT);
+        Skin skin = Skin.SMOKE;
+        CustomFont font = skin.label.get();
+        int by = buttonY();
+        int bw = buttonWidth();
+        GlassShader.panel(MARGIN, by, bw, BUTTON_H, RADIUS, Glass.SMOKE_PANEL);
+        if (settingsFlyoutOpen || RenderUtil.hovered(mouseX, mouseY, MARGIN, by, bw, BUTTON_H)) {
+            GlassShader.rect(MARGIN, by, bw, BUTTON_H, RADIUS, 0x0FFFFFFF, 0x0FFFFFFF);
         }
-        Theme.contour(btnX, btnY, SETTINGS_BTN_WIDTH, HEADER_HEIGHT);
-        if (font != null) {
-            font.drawCenteredInRect("Settings", btnX, btnY,
-                    SETTINGS_BTN_WIDTH, HEADER_HEIGHT, Theme.TEXT);
+        Icons.draw(Icons.Icon.GEAR, MARGIN + 9, by + (BUTTON_H - 10.5F) / 2.0F, 10.5F, 2.2F, 0xBFFFFFFF);
+        font.drawString("Settings", MARGIN + 9 + 10.5F + 6, by + (BUTTON_H - font.getHeight()) / 2.0F, skin.text);
+        if (!settingsFlyoutOpen) {
+            return;
         }
-        if (settingsFlyoutOpen) {
-            for (int i = 0; i < FLYOUT_ROWS.length; i++) {
-                int rowY = btnY - ROW_HEIGHT * (i + 1);
-                boolean rowHover = RenderUtil.hovered(mouseX, mouseY, btnX, rowY, SETTINGS_BTN_WIDTH, ROW_HEIGHT);
-                RenderUtil.rect(btnX, rowY, SETTINGS_BTN_WIDTH, ROW_HEIGHT, Theme.BODY);
-                if (rowHover) {
-                    RenderUtil.rect(btnX, rowY, SETTINGS_BTN_WIDTH, ROW_HEIGHT, Theme.HOVER_LIFT);
-                }
-                Theme.contour(btnX, rowY, SETTINGS_BTN_WIDTH, ROW_HEIGHT);
-                if (font != null) {
-                    font.drawCenteredInRect(FLYOUT_ROWS[i], btnX, rowY,
-                            SETTINGS_BTN_WIDTH, ROW_HEIGHT, Theme.TEXT);
-                }
+        int fy = flyoutY();
+        GlassShader.panel(MARGIN, fy, FLYOUT_W, FLYOUT_ROWS.length * FLYOUT_ROW + 6, RADIUS, Glass.SMOKE_PANEL);
+        for (int i = 0; i < FLYOUT_ROWS.length; i++) {
+            int ry = fy + 3 + i * FLYOUT_ROW;
+            if (RenderUtil.hovered(mouseX, mouseY, MARGIN, ry, FLYOUT_W, FLYOUT_ROW)) {
+                GlassShader.rect(MARGIN + 3, ry, FLYOUT_W - 6, FLYOUT_ROW, 4.5F, 0x14FFFFFF, 0x14FFFFFF);
             }
+            Icons.draw(FLYOUT_ICONS[i], MARGIN + 9, ry + (FLYOUT_ROW - 9.75F) / 2.0F, 9.75F, 2.2F, 0xBFFFFFFF);
+            font.drawString(FLYOUT_ROWS[i], MARGIN + 9 + 9.75F + 6, ry + (FLYOUT_ROW - font.getHeight()) / 2.0F,
+                    skin.text);
         }
     }
 
@@ -230,12 +169,21 @@ public class ClickGuiScreen extends GuiScreen {
         return search.isEmpty() || module.getName().toLowerCase().contains(search.toLowerCase());
     }
 
-    private void drawSearchBox(int mouseX, int mouseY) {
+    private int searchX() {
+        return this.width - MARGIN - SEARCH_W;
+    }
+
+    private void drawSearchBox() {
         searchCursorCounter++;
-        int boxX = this.width - MARGIN - SEARCH_BOX_WIDTH;
-        int boxY = this.height - HEADER_HEIGHT - MARGIN;
-        CustomSearchField.draw(Fonts.medium, boxX, boxY, SEARCH_BOX_WIDTH, HEADER_HEIGHT,
-                search, searchFocused, "Search...", searchCursorCounter);
+        int sx = searchX();
+        int sy = buttonY();
+        GlassShader.panel(sx, sy, SEARCH_W, BUTTON_H, RADIUS, Glass.SMOKE_PANEL);
+        if (searchFocused) {
+            GlassShader.stroke(sx, sy, SEARCH_W, BUTTON_H, RADIUS, 0x8084D2E3);
+        }
+        Icons.draw(Icons.Icon.SEARCH, sx + 7.5F, sy + (BUTTON_H - 9.75F) / 2.0F, 9.75F, 2.4F, 0x99FFFFFF);
+        Widgets.text(Skin.SMOKE.label.get(), sx + 7.5F + 9.75F + 6, sy, BUTTON_H, search, searchFocused,
+                "Search...", searchCursorCounter, Skin.SMOKE);
     }
 
     // the topmost containing panel wins even if it has no tooltip
@@ -256,39 +204,6 @@ public class ClickGuiScreen extends GuiScreen {
         return null;
     }
 
-    private void drawTooltip(String text, int mouseX, int mouseY) {
-        CustomFont font = Fonts.medium;
-        if (font == null) {
-            return;
-        }
-        List<String> lines = font.wrapToWidth(text, TOOLTIP_MAX_WIDTH);
-        int lineH = font.getHeight();
-        int contentW = 0;
-        for (String line : lines) {
-            contentW = Math.max(contentW, font.getStringWidth(line));
-        }
-        int boxW = contentW + TOOLTIP_PAD * 2;
-        int boxH = lines.size() * lineH + (lines.size() - 1) * TOOLTIP_LINE_GAP + TOOLTIP_PAD * 2;
-
-        int left = mouseX + 8;
-        int top = mouseY + 8;
-        if (left + boxW > this.width) {
-            left = mouseX - 8 - boxW;
-        }
-        if (top + boxH > this.height) {
-            top = mouseY - 8 - boxH;
-        }
-        left = MathHelper.clamp_int(left, 2, Math.max(2, this.width - boxW - 2));
-        top = MathHelper.clamp_int(top, 2, Math.max(2, this.height - boxH - 2));
-
-        RenderUtil.drawBorderedRect(left, top, left + boxW, top + boxH, Theme.TOOLTIP_BG, Theme.CONTOUR, Theme.CONTOUR_PX);
-        int textY = top + TOOLTIP_PAD;
-        for (String line : lines) {
-            font.drawStringWithShadow(line, left + TOOLTIP_PAD, textY, Theme.TEXT);
-            textY += lineH + TOOLTIP_LINE_GAP;
-        }
-    }
-
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
         if (mouseButton != 2) {
@@ -297,41 +212,26 @@ public class ClickGuiScreen extends GuiScreen {
         searchFocused = false;
         // a click that dismisses the modal is swallowed
         if (configWindow != null) {
-            if (configWindow.mouseClicked(mouseX, mouseY, mouseButton)) {
-                return;
+            if (!configWindow.mouseClicked(mouseX, mouseY, mouseButton)) {
+                configWindow = null;
             }
-            configWindow = null;
             return;
         }
         if (settingsPanel != null && settingsPanel.mouseClicked(mouseX, mouseY, mouseButton)) {
             return;
         }
-        if (mouseButton == 0 && RenderUtil.hovered(mouseX, mouseY,
-                this.width - MARGIN - SEARCH_BOX_WIDTH, this.height - HEADER_HEIGHT - MARGIN,
-                SEARCH_BOX_WIDTH, HEADER_HEIGHT)) {
+        if (mouseButton == 0 && RenderUtil.hovered(mouseX, mouseY, searchX(), buttonY(), SEARCH_W, BUTTON_H)) {
             searchFocused = true;
             searchCursorCounter = 0;
             return;
         }
         if (mouseButton == 0) {
-            int btnX = MARGIN;
-            int btnY = this.height - HEADER_HEIGHT - MARGIN;
-            if (RenderUtil.hovered(mouseX, mouseY, btnX, btnY, SETTINGS_BTN_WIDTH, HEADER_HEIGHT)) {
+            if (RenderUtil.hovered(mouseX, mouseY, MARGIN, buttonY(), buttonWidth(), BUTTON_H)) {
                 settingsFlyoutOpen = !settingsFlyoutOpen;
                 return;
             }
-            if (settingsFlyoutOpen) {
-                int configY = btnY - ROW_HEIGHT;
-                if (RenderUtil.hovered(mouseX, mouseY, btnX, configY, SETTINGS_BTN_WIDTH, ROW_HEIGHT)) {
-                    configWindow = new ConfigWindow(this, this.width, this.height);
-                    settingsFlyoutOpen = false;
-                    return;
-                }
-                int editY = btnY - ROW_HEIGHT * 2;
-                if (RenderUtil.hovered(mouseX, mouseY, btnX, editY, SETTINGS_BTN_WIDTH, ROW_HEIGHT)) {
-                    this.mc.displayGuiScreen(new HudEditScreen());
-                    return;
-                }
+            if (settingsFlyoutOpen && clickFlyout(mouseX, mouseY)) {
+                return;
             }
         }
         // hit-test in draw order, docked pair first
@@ -361,6 +261,26 @@ public class ClickGuiScreen extends GuiScreen {
             listeningModule = null;
             settingsFlyoutOpen = false;
         }
+    }
+
+    private boolean clickFlyout(int mouseX, int mouseY) {
+        int fy = flyoutY();
+        for (int i = 0; i < FLYOUT_ROWS.length; i++) {
+            if (!RenderUtil.hovered(mouseX, mouseY, MARGIN, fy + 3 + i * FLYOUT_ROW, FLYOUT_W, FLYOUT_ROW)) {
+                continue;
+            }
+            settingsFlyoutOpen = false;
+            if (i == 0) {
+                ColdPlay.getInstance().getConfigManager().setGuiStyle(GuiStyle.MILK);
+                this.mc.displayGuiScreen(GuiStyle.MILK.createScreen());
+            } else if (i == 1) {
+                this.mc.displayGuiScreen(new HudEditScreen());
+            } else {
+                configWindow = new ConfigWindow(this::closeConfigWindow, this.width, this.height, Skin.SMOKE);
+            }
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -470,7 +390,7 @@ public class ClickGuiScreen extends GuiScreen {
             if (settingsPanel != null && settingsPanel.getModule() == module) {
                 settingsPanel = null;
             } else {
-                settingsPanel = new SettingsPanel(this, module, host, this.width, this.height);
+                settingsPanel = new SettingsPanel(this, this::closeSettings, module, host, this.width, this.height);
             }
         } else if (button == 2) {
             listeningModule = (listeningModule == module) ? null : module;
@@ -483,37 +403,5 @@ public class ClickGuiScreen extends GuiScreen {
 
     public void closeConfigWindow() {
         configWindow = null;
-    }
-
-    // BODY is translucent; drawing it twice shows as a band
-    public static void drawWindowBase(int x, int y, int width, int height) {
-        RenderUtil.rect(x, y, width, height, Theme.BODY);
-    }
-
-    // drawn after content so the frame covers row separators
-    public static void drawWindowFrame(int x, int y, int width, int height) {
-        drawHeaderRule(x, y, width);
-        Theme.contour(x, y, width, height);
-    }
-
-    public static void drawHeaderRule(int x, int y, int width) {
-        RenderUtil.rectBounds(x, y + HEADER_HEIGHT - 1, x + width, y + HEADER_HEIGHT, Theme.SEP);
-    }
-
-    public static void drawWindowHeader(CustomFont font, String title, int x, int y, int width,
-                                        int mouseX, int mouseY) {
-        boolean closeHover = hitsClose(x, y, width, HEADER_HEIGHT, mouseX, mouseY);
-        if (closeHover) {
-            RenderUtil.rectBounds(x + width - CLOSE_W, y, x + width, y + HEADER_HEIGHT, Theme.HOVER_LIFT);
-        }
-        float textY = y + (HEADER_HEIGHT - font.getHeight()) / 2f;
-        font.drawString(title, x + 5, textY, Theme.TEXT);
-        font.drawCenteredInRect("x", x + width - CLOSE_W, y, CLOSE_W, HEADER_HEIGHT,
-                closeHover ? Theme.TEXT : Theme.TEXT_DIM);
-    }
-
-    public static boolean hitsClose(int windowX, int windowY, int windowWidth, int headerHeight,
-                                     int mouseX, int mouseY) {
-        return RenderUtil.hovered(mouseX, mouseY, windowX + windowWidth - CLOSE_W, windowY, CLOSE_W, headerHeight);
     }
 }

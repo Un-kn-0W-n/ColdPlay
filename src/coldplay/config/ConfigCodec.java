@@ -1,6 +1,7 @@
 package coldplay.config;
 
 import coldplay.friend.FriendManager;
+import coldplay.gui.GuiStyle;
 import coldplay.hud.HudState;
 import coldplay.module.Category;
 import coldplay.module.Module;
@@ -17,8 +18,15 @@ public final class ConfigCodec {
 
     public JsonObject encodeRoot(ModuleManager moduleManager,
                                  Map<Category, ConfigManager.PanelState> panelStates,
-                                 HudState hudState) {
+                                 HudState hudState, GuiStyle guiStyle, int[] milkWindow) {
         JsonObject root = new JsonObject();
+        root.addProperty("guiStyle", guiStyle.name());
+        if (milkWindow != null) {
+            JsonObject window = new JsonObject();
+            window.addProperty("x", milkWindow[0]);
+            window.addProperty("y", milkWindow[1]);
+            root.add("milkWindow", window);
+        }
         root.add("layout", encodeLayout(hudState));
         root.add("panels", encodePanels(panelStates));
         root.add("hud", encodeHud(hudState));
@@ -44,6 +52,24 @@ public final class ConfigCodec {
         applyHud(root, hudState);
         applyProfile(root, moduleManager);
         applyFriends(root);
+    }
+
+    public GuiStyle readGuiStyle(JsonObject root) {
+        try {
+            return GuiStyle.valueOf(root.get("guiStyle").getAsString());
+        } catch (Exception ignored) {
+            return GuiStyle.SMOKE;
+        }
+    }
+
+    /** Null when the window was never moved. */
+    public int[] readMilkWindow(JsonObject root) {
+        try {
+            JsonObject window = root.getAsJsonObject("milkWindow");
+            return new int[]{window.get("x").getAsInt(), window.get("y").getAsInt()};
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     /** Returns false when the root has no usable "modules" section. */

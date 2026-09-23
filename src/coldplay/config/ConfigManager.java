@@ -1,5 +1,6 @@
 package coldplay.config;
 
+import coldplay.gui.GuiStyle;
 import coldplay.hud.HudState;
 import coldplay.module.Category;
 import coldplay.module.ModuleManager;
@@ -37,6 +38,8 @@ public class ConfigManager {
     private final HudState hudState;
     private int panelLayoutWidth; // 0 until the first load or ClickGUI open
     private int panelLayoutHeight;
+    private GuiStyle guiStyle = GuiStyle.SMOKE;
+    private int[] milkWindow; // top-left, null until the Milk window is first moved
 
     public ConfigManager(HudState hudState) {
         this.hudState = hudState;
@@ -46,6 +49,22 @@ public class ConfigManager {
 
     public int getGuiOpenKey() {
         return Keyboard.KEY_RSHIFT;
+    }
+
+    public GuiStyle getGuiStyle() {
+        return guiStyle;
+    }
+
+    public void setGuiStyle(GuiStyle guiStyle) {
+        this.guiStyle = guiStyle;
+    }
+
+    public int[] getMilkWindow() {
+        return milkWindow;
+    }
+
+    public void setMilkWindow(int x, int y) {
+        milkWindow = new int[]{x, y};
     }
 
     public PanelState getPanelState(Category category) {
@@ -72,7 +91,10 @@ public class ConfigManager {
     }
 
     public void load(ModuleManager moduleManager) {
-        codec.applyRoot(rootStore.load(), moduleManager, panelStates, hudState);
+        JsonObject root = rootStore.load();
+        codec.applyRoot(root, moduleManager, panelStates, hudState);
+        guiStyle = codec.readGuiStyle(root);
+        milkWindow = codec.readMilkWindow(root);
         // Panels and HUD anchors share the persisted reference screen size.
         panelLayoutWidth = hudState.getLayoutWidth();
         panelLayoutHeight = hudState.getLayoutHeight();
@@ -80,7 +102,7 @@ public class ConfigManager {
 
     public void save(ModuleManager moduleManager) {
         reflowPanels(hudState.getLayoutWidth(), hudState.getLayoutHeight());
-        rootStore.save(codec.encodeRoot(moduleManager, panelStates, hudState));
+        rootStore.save(codec.encodeRoot(moduleManager, panelStates, hudState, guiStyle, milkWindow));
     }
 
     private File configsDir() {

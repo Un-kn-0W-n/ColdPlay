@@ -6,11 +6,27 @@ import net.minecraft.client.gui.ScaledResolution;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /** Bakes the shared font atlases lazily on the render thread, falling back to an AWT logical font. */
 public final class Fonts {
 
-    private static final String FONT_PATH = "/assets/minecraft/coldplay/fonts/hud.ttf";
+    private static final String FONT_DIR = "/assets/minecraft/coldplay/fonts/";
+    private static final String FONT_PATH = FONT_DIR + "hud.ttf";
+
+    // bundled faces for FontRef
+    public static final String GEIST = "geist-regular";
+    public static final String GEIST_MEDIUM = "geist-medium";
+    public static final String GEIST_SEMIBOLD = "geist-semibold";
+    public static final String GEIST_MONO = "geist-mono-regular";
+    public static final String GEIST_MONO_MEDIUM = "geist-mono-medium";
+    public static final String JAKARTA = "jakarta-regular";
+    public static final String JAKARTA_MEDIUM = "jakarta-medium";
+    public static final String JAKARTA_SEMIBOLD = "jakarta-semibold";
+    public static final String JAKARTA_BOLD = "jakarta-bold";
 
     private static final float LIST_SIZE = 10f;
     private static final float TITLE_SIZE = 15f;
@@ -29,6 +45,9 @@ public final class Fonts {
     private static int attempts;
     private static boolean loaded;
     private static int bakedScale;
+    private static int generation;
+    private static final List<CustomFont> baked = new ArrayList<CustomFont>();
+    private static final Map<String, Font> faces = new HashMap<String, Font>();
 
     private Fonts() {
     }
@@ -57,7 +76,12 @@ public final class Fonts {
             title = newTitle;
             medium = newMedium;
             logo = newLogo;
+            for (CustomFont font : baked) {
+                font.dispose();
+            }
+            baked.clear();
             bakedScale = scale;
+            generation++; // FontRefs rebake on their next use
             loaded = true;
             attempts = 0; // retry budget is per bake
         } catch (Throwable t) {
@@ -76,6 +100,30 @@ public final class Fonts {
 
     public static boolean isLoaded() {
         return loaded;
+    }
+
+    static int generation() {
+        return generation;
+    }
+
+    /** A bundled face at {@code size} GUI px for the current GUI scale; freed on the next rebake. */
+    static CustomFont bake(String face, float size) {
+        CustomFont font = new CustomFont(face(face).deriveFont(size), bakedScale);
+        baked.add(font);
+        return font;
+    }
+
+    private static Font face(String name) {
+        Font font = faces.get(name);
+        if (font == null) {
+            try (InputStream in = Fonts.class.getResourceAsStream(FONT_DIR + name + ".ttf")) {
+                font = Font.createFont(Font.TRUETYPE_FONT, in);
+            } catch (Exception e) {
+                font = new Font("SansSerif", Font.PLAIN, 12);
+            }
+            faces.put(name, font);
+        }
+        return font;
     }
 
     private static Font loadBase() {
