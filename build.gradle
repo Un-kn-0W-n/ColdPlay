@@ -8,7 +8,7 @@ import org.gradle.internal.os.OperatingSystem
 group = 'cn.timer'
 version = '1.8.9'
 
-ext.lwjglVersion  = '3.3.2'
+ext.lwjglVersion  = '3.4.3'
 
 ext.lwjglNatives = {
     def os = OperatingSystem.current()
