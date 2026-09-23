@@ -98,6 +98,7 @@ public class ModuleManager {
         register(new coldplay.module.utility.HumanRecorder(hudState));
         register(new coldplay.module.utility.PacketLogger(clientVersion,
                 () -> new coldplay.config.ConfigCodec().encodeProfile(this).toString()));
+        register(new coldplay.module.utility.ACLearner(this::getModules));
     }
 
     private void register(Module module) {

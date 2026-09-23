@@ -324,7 +324,14 @@ public class NetHandlerPlayClient implements INetHandlerPlayClient {
         Entity entity = this.clientWorldController.getEntityByID(packetIn.getEntityId());
 
         if (entity != null && packetIn.func_149376_c() != null) {
+            // ColdPlay >>> keep our own sprint
+            // the server goes by our C0B; its echo is a round trip old, more under FakeLag or a Velocity hold
+            boolean sprinting = entity.isSprinting();
             entity.getDataWatcher().updateWatchedObjectsFromList(packetIn.func_149376_c());
+            if (entity == this.gameController.thePlayer && entity.isSprinting() != sprinting) {
+                entity.setSprinting(sprinting);
+            }
+            // ColdPlay <<<
         }
     }
 
@@ -1598,6 +1605,11 @@ public class NetHandlerPlayClient implements INetHandlerPlayClient {
                         iattributeinstance.applyModifier(attributemodifier);
                     }
                 }
+                // ColdPlay >>> keep our own sprint speed, same stale echo as the metadata flag
+                if (entity == this.gameController.thePlayer) {
+                    entity.setSprinting(entity.isSprinting());
+                }
+                // ColdPlay <<<
             }
         }
     }

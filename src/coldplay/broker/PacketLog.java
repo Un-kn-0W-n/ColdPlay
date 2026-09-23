@@ -244,7 +244,7 @@ public final class PacketLog {
         }
     }
 
-    private static String csv(String value) {
+    public static String csv(String value) {
         return '"' + value.replace("\"", "\"\"").replace('\r', ' ').replace('\n', ' ') + '"';
     }
 
@@ -261,7 +261,7 @@ public final class PacketLog {
         return out.toString().replaceAll("[\r\n]+", " ");
     }
 
-    private static void appendValue(StringBuilder out, Object value) {
+    public static void appendValue(StringBuilder out, Object value) {
         if (value instanceof ItemStack) {
             ItemStack stack = (ItemStack) value;
             out.append("{item=").append(Item.getIdFromItem(stack.getItem())).append(",count=")
@@ -312,7 +312,7 @@ public final class PacketLog {
         }
     }
 
-    private static Field[] fields(Class<?> type) {
+    public static Field[] fields(Class<?> type) {
         Field[] cached = FIELDS.get(type);
         if (cached == null) {
             List<Field> found = new ArrayList<Field>();
