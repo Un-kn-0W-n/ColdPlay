@@ -11,8 +11,8 @@
         "NPCs": false,
         "Through Blocks": false,
         "Range": 4.5,
-        "FOV": 180.0,
-        "Level": "Normal",
+        "FOV": 31.0,
+        "Level": "Aggressive",
         "Auto Off": true
       }
     },
@@ -35,7 +35,7 @@
       "settings": {}
     },
     "KillAura": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 19,
       "settings": {
         "Players": true,
@@ -47,13 +47,13 @@
         "Lock": "Switch",
         "Rotation Speed": 180.0,
         "Humanize": false,
-        "Rotation Range": 4.5,
-        "FOV": 360.0,
+        "Rotation Range": 5.0,
+        "FOV": 266.0,
         "CPS": [
           14.0,
           17.0
         ],
-        "Range": 3.1,
+        "Range": 3.2,
         "Raytrace": "First",
         "Render": false,
         "Graph Scale": 1.0,
@@ -64,7 +64,7 @@
       "enabled": false,
       "keyBind": 0,
       "settings": {
-        "Mode": "Vanilla",
+        "Mode": "Blink",
         "BlockTicks": 5.0,
         "ReleaseTicks": 2.0,
         "HoldTicks": 5.0,
@@ -78,7 +78,7 @@
       "settings": {
         "Mode": "Hypixel",
         "Range": 4.5,
-        "Ignore Own Bed": false,
+        "Ignore Own Bed": true,
         "Progress Bar": true,
         "Highlight": true,
         "Highlight Color": -16711836,
@@ -149,10 +149,10 @@
     },
     "AutoClicker": {
       "enabled": false,
-      "keyBind": 22,
+      "keyBind": 0,
       "settings": {
         "Button": "Left",
-        "Min CPS": 5.0,
+        "Min CPS": 6.0,
         "Max CPS": 9.0
       }
     },
@@ -173,7 +173,7 @@
       "keyBind": 0,
       "settings": {
         "Delay": [
-          50.0,
+          25.0,
           75.0
         ],
         "Combat Timeout": 3.0,
@@ -208,11 +208,11 @@
       "enabled": false,
       "keyBind": 34,
       "settings": {
-        "Mode": "Hypixel",
+        "Mode": "Telly",
         "AutoSwitch": true,
         "KeepY": false,
         "Expand": 1.0,
-        "Safety": true,
+        "Safety": false,
         "Render": true,
         "Auto Off": false
       }
@@ -223,7 +223,7 @@
       "settings": {}
     },
     "AutoPearl": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "VoidDepth": 10.0,
@@ -236,15 +236,15 @@
       "settings": {}
     },
     "Velocity": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Mode": "Legit",
+        "Mode": "Hypixel",
         "Chance": 75.0
       }
     },
     "BlockAnimation": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 0,
       "settings": {}
     },
@@ -269,14 +269,14 @@
       "enabled": true,
       "keyBind": 48,
       "settings": {
-        "Saved Gamma": 0.0
+        "Saved Gamma": 1.0
       }
     },
     "ESP": {
       "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Mode": "Chams",
+        "Mode": "Outline",
         "Thickness": 1.0,
         "Filled": true,
         "Opacity": 93.0,
@@ -284,7 +284,7 @@
         "Mobs": false,
         "Animals": false,
         "Invisible": true,
-        "Range": 256.0,
+        "Range": 96.0,
         "Player Color": -1,
         "Mob Color": -50116,
         "Animal Color": -11477916
@@ -299,7 +299,7 @@
         "Mobs": false,
         "Animals": false,
         "Invisible": true,
-        "Range": 256.0,
+        "Range": 96.0,
         "Player Color": -1,
         "Mob Color": -50116,
         "Animal Color": -11477916
@@ -309,13 +309,13 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Size": 9.0,
-        "Radius": 39.0,
+        "Size": 6.0,
+        "Radius": 30.0,
         "Players": true,
         "Mobs": false,
         "Animals": false,
-        "Invisible": true,
-        "Range": 256.0
+        "Invisible": false,
+        "Range": 96.0
       }
     },
     "NameTags": {
@@ -326,7 +326,7 @@
         "Mobs": false,
         "Animals": false,
         "Invisible": true,
-        "Range": 256.0
+        "Range": 96.0
       }
     },
     "ChestESP": {
@@ -422,13 +422,13 @@
       }
     },
     "ChestStealer": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Mode": "Hypixel",
         "Delay": [
-          85.0,
-          190.0
+          95.0,
+          245.0
         ],
         "Auto Close": true,
         "Auto Off": false
@@ -463,44 +463,44 @@
           "2,-3": false,
           "3,-3": false,
           "-3,-2": false,
-          "-2,-2": true,
-          "-1,-2": true,
-          "0,-2": true,
-          "1,-2": true,
-          "2,-2": true,
+          "-2,-2": false,
+          "-1,-2": false,
+          "0,-2": false,
+          "1,-2": false,
+          "2,-2": false,
           "3,-2": false,
           "-3,-1": false,
-          "-2,-1": true,
+          "-2,-1": false,
           "-1,-1": true,
           "0,-1": true,
           "1,-1": true,
-          "2,-1": true,
+          "2,-1": false,
           "3,-1": false,
           "-3,0": false,
-          "-2,0": true,
+          "-2,0": false,
           "-1,0": true,
           "1,0": true,
-          "2,0": true,
+          "2,0": false,
           "3,0": false,
           "-3,1": false,
-          "-2,1": true,
+          "-2,1": false,
           "-1,1": true,
           "1,1": true,
-          "2,1": true,
+          "2,1": false,
           "3,1": false,
           "-3,2": false,
-          "-2,2": true,
+          "-2,2": false,
           "-1,2": true,
           "0,2": true,
           "1,2": true,
-          "2,2": true,
+          "2,2": false,
           "3,2": false,
           "-3,3": false,
-          "-2,3": true,
-          "-1,3": true,
-          "0,3": true,
-          "1,3": true,
-          "2,3": true,
+          "-2,3": false,
+          "-1,3": false,
+          "0,3": false,
+          "1,3": false,
+          "2,3": false,
           "3,3": false,
           "-3,4": false,
           "-2,4": false,
@@ -522,7 +522,7 @@
         "Sound": true,
         "Always Show": false,
         "Distance Bars": true,
-        "Scale": 1.0
+        "Scale": 1.4
       }
     },
     "MiddleClickFriend": {
@@ -531,12 +531,12 @@
       "settings": {}
     },
     "InvManager": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Delay": [
-          70.0,
-          130.0
+          100.0,
+          200.0
         ],
         "AutoArmor": true,
         "ArmorInstant": true,
@@ -545,28 +545,25 @@
         "Layout": {
           "slots": [
             [
-              "@cat:Sword",
+              "@cat:Sword"
+            ],
+            [
               "@cat:Tools"
             ],
             [
-              "minecraft:fishing_rod:0"
+              "@cat:Tools"
             ],
             [
-              "minecraft:snowball:0",
-              "minecraft:egg:0"
+              "@cat:Tools"
             ],
             [
-              "minecraft:ender_pearl:0"
-            ],
-            [
-              "@cat:Potion"
-            ],
-            [
-              "@cat:Food"
-            ],
-            [
-              "minecraft:golden_apple:1",
               "minecraft:golden_apple:0"
+            ],
+            [
+              "@cat:Throwables"
+            ],
+            [
+              "@cat:Blocks"
             ],
             [
               "@cat:Blocks"
@@ -621,7 +618,7 @@
           "@cat:Other": "IGNORE",
           "@cat:Potion": "DROP",
           "@cat:Sword": "DROP",
-          "@cat:Throwables": "DROP",
+          "@cat:Throwables": "KEEP_ONE",
           "@cat:Tools": "DROP"
         },
         "Auto Close": true
@@ -635,6 +632,11 @@
       }
     },
     "PacketLogger": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {}
+    },
+    "ACLearner": {
       "enabled": false,
       "keyBind": 0,
       "settings": {}

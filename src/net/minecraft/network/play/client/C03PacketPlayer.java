@@ -94,6 +94,14 @@ public class C03PacketPlayer implements Packet<INetHandlerPlayServer>
         this.moving = isMoving;
     }
 
+    // ColdPlay: ACLearner probes rewrite a setback echo
+    public void setPosition(double x, double y, double z)
+    {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+    }
+
     public static class C04PacketPlayerPosition extends C03PacketPlayer
     {
         public C04PacketPlayerPosition()

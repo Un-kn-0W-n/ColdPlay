@@ -143,6 +143,7 @@ public class NetworkManager extends SimpleChannelInboundHandler<Packet> {
 	@Override
 	protected void channelRead0(final ChannelHandlerContext p_channelRead0_1_, final Packet p_channelRead0_2_) throws Exception {
 		coldplay.broker.PacketLog.getInstance().record(p_channelRead0_2_, false, recordingConnection); // ColdPlay
+		if (this.direction == EnumPacketDirection.CLIENTBOUND) coldplay.module.utility.ACLearner.receive(p_channelRead0_2_); // ColdPlay
 		if (this.channel.isOpen()) try {
 			p_channelRead0_2_.processPacket(this.packetListener);
 		} catch (final ThreadQuickExitException var4) {}
@@ -210,6 +211,7 @@ public class NetworkManager extends SimpleChannelInboundHandler<Packet> {
 	/** ColdPlay: the channel half of dispatchPacket, so a held packet skips validation when released. */
 	private void writePacket(final Packet inPacket, final GenericFutureListener<? extends Future<? super Void>>[] futureListeners) {
 		// ColdPlay <<<
+		if (this.direction == EnumPacketDirection.CLIENTBOUND && !coldplay.module.utility.ACLearner.send(inPacket)) return; // ColdPlay
 		final EnumConnectionState enumconnectionstate = EnumConnectionState.getFromPacket(inPacket);
 		final EnumConnectionState enumconnectionstate1 = this.channel.attr(attrKeyConnectionState).get();
 		if (enumconnectionstate1 != enumconnectionstate) {

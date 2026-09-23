@@ -9,9 +9,11 @@
         "Animals": false,
         "Invisible": false,
         "NPCs": false,
+        "Through Blocks": false,
         "Range": 4.5,
         "FOV": 31.0,
-        "Level": "Aggressive"
+        "Level": "Aggressive",
+        "Auto Off": true
       }
     },
     "AntiBot": {
@@ -33,7 +35,7 @@
       "settings": {}
     },
     "KillAura": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 19,
       "settings": {
         "Players": true,
@@ -43,30 +45,8 @@
         "NPCs": false,
         "Target": "Distance",
         "Lock": "Switch",
-        "Rotation Speed": [
-          180.0,
-          180.0
-        ],
-        "Pitch Speed": [
-          180.0,
-          180.0
-        ],
-        "Yaw Acceleration": [
-          100.0,
-          100.0
-        ],
-        "Pitch Acceleration": [
-          100.0,
-          100.0
-        ],
-        "Yaw Deceleration": [
-          0.0,
-          0.0
-        ],
-        "Pitch Deceleration": [
-          0.0,
-          0.0
-        ],
+        "Rotation Speed": 180.0,
+        "Humanize": false,
         "Rotation Range": 5.0,
         "FOV": 266.0,
         "CPS": [
@@ -76,6 +56,7 @@
         "Range": 3.2,
         "Raytrace": "First",
         "Render": false,
+        "Graph Scale": 1.0,
         "Auto Off": true
       }
     },
@@ -111,6 +92,20 @@
         "Chance": 75.0,
         "STap": false,
         "Distance": 3.0
+      }
+    },
+    "KeepSprint": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Chance": 75.0
+      }
+    },
+    "Criticals": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Mode": "Hypixel"
       }
     },
     "AutoThrow": {
@@ -186,6 +181,17 @@
         "Auto Off": false
       }
     },
+    "FakeLag": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Delay": [
+          125.0,
+          125.0
+        ],
+        "Auto Off": false
+      }
+    },
     "Sprint": {
       "enabled": true,
       "keyBind": 0,
@@ -202,7 +208,7 @@
       "enabled": false,
       "keyBind": 34,
       "settings": {
-        "Mode": "Hypixel",
+        "Mode": "Telly",
         "AutoSwitch": true,
         "KeepY": false,
         "Expand": 1.0,
@@ -214,11 +220,7 @@
     "NoFall": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {
-        "MinFallDistance": 3.0,
-        "PlaceHeight": 3.0,
-        "Auto Off": false
-      }
+      "settings": {}
     },
     "AutoPearl": {
       "enabled": false,
@@ -231,14 +233,13 @@
     "InvMove": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {
-        "Mode": "Hypixel"
-      }
+      "settings": {}
     },
     "Velocity": {
       "enabled": true,
       "keyBind": 0,
       "settings": {
+        "Mode": "Legit",
         "Chance": 75.0
       }
     },
@@ -253,7 +254,9 @@
       "settings": {
         "ArrayList": true,
         "Suffixes": true,
+        "ArrayList Scale": 1.0,
         "Watermark": true,
+        "Watermark Scale": 1.0,
         "Animations": true
       }
     },
@@ -392,7 +395,9 @@
     "ArmorStatus": {
       "enabled": true,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Scale": 1.0
+      }
     },
     "Mirror": {
       "enabled": false,
@@ -512,7 +517,13 @@
     "BedNotification": {
       "enabled": true,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Range": 40.0,
+        "Sound": true,
+        "Always Show": false,
+        "Distance Bars": true,
+        "Scale": 1.0
+      }
     },
     "MiddleClickFriend": {
       "enabled": true,
@@ -616,10 +627,12 @@
     "HumanRecorder": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Scale": 1.0
+      }
     },
     "PacketLogger": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {}
     }
