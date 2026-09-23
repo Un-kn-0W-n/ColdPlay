@@ -4,7 +4,6 @@ import coldplay.ColdPlay;
 import coldplay.event.EventKey;
 import coldplay.event.EventTarget;
 import coldplay.event.EventUpdate;
-import coldplay.gui.click.ClickGuiScreen;
 import coldplay.module.Module;
 import coldplay.module.ModuleManager;
 import coldplay.util.ChatUtil;
@@ -33,7 +32,7 @@ public class InputManager {
         ColdPlay coldPlay = ColdPlay.getInstance();
 
         if (key == coldPlay.getConfigManager().getGuiOpenKey()) {
-            Minecraft.getMinecraft().displayGuiScreen(new ClickGuiScreen());
+            Minecraft.getMinecraft().displayGuiScreen(coldPlay.getConfigManager().getGuiStyle().createScreen());
             return;
         }
 

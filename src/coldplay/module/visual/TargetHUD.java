@@ -6,6 +6,7 @@ import coldplay.event.EventHurt;
 import coldplay.event.EventRender2D;
 import coldplay.event.EventTarget;
 import coldplay.event.EventUpdate;
+import coldplay.gui.Glass;
 import coldplay.gui.GlassShader;
 import coldplay.hud.HudState;
 import coldplay.module.Category;
@@ -19,6 +20,7 @@ import coldplay.util.EntityTargets;
 import coldplay.util.HealthResolver;
 import coldplay.util.RenderUtil;
 import coldplay.util.font.CustomFont;
+import coldplay.util.font.FontRef;
 import coldplay.util.font.Fonts;
 
 import net.minecraft.client.Minecraft;
@@ -39,24 +41,23 @@ import java.awt.Color;
 public class TargetHUD extends Module {
     private final HudState hud;
 
-    private static final int PAD = 5;
-    private static final int HEAD = 28;
-    private static final int HEAD_GAP = 6;
-    private static final int BAR_H = 5;
-    private static final int MIN_COL_W = 90;
-    private static final int TEXT_PAD = 8; // min gap between the name and the health number
-    private static final float RADIUS = 6.0F;
-    private static final float HEAD_RADIUS = 4.0F;
-    private static final float SHADOW = 8.0F;
+    private static final float PAD = 7.5F;
+    private static final int HEAD = 30;
+    private static final float HEAD_GAP = 7.5F;
+    private static final float BAR_H = 3.0F;
+    private static final float BAR_GAP = 6.0F; // between the text row and the bar
+    private static final int MIN_COL_W = 121;  // keeps the card at least 174 wide
+    private static final int TEXT_PAD = 8;     // min gap between the name and the health number
+    private static final float RADIUS = 7.5F;
+    private static final float HEAD_RADIUS = 4.5F;
 
-    private static final int GLASS_TOP = 0xA0151820;
-    private static final int GLASS_BOTTOM = 0xC8070809;
-    private static final int RIM = 0x3CFFFFFF;
     private static final int WELL = 0x40000000;
-    private static final int TRACK = 0x26FFFFFF;
+    private static final int TRACK = 0x24FFFFFF;
     private static final int TRAIL = 0x59FFFFFF;
-    private static final int TEXT = 0xFFF1F3F8;
+    private static final int TEXT = 0xFFFFFFFF;
     private static final int HURT = 0xFFFF5A5A;
+    private static final FontRef NAME_FONT = new FontRef(Fonts.GEIST_SEMIBOLD, 9.75F);
+    private static final FontRef HP_FONT = new FontRef(Fonts.GEIST_MONO, 9.0F);
 
     private final BooleanSetting healthText = add(new BooleanSetting("Health Text", true).describe("Numeric health next to the name."));
 
@@ -159,7 +160,8 @@ public class TargetHUD extends Module {
         if (!Fonts.isLoaded()) {
             return;
         }
-        CustomFont font = Fonts.medium;
+        CustomFont font = NAME_FONT.get();
+        CustomFont hpFont = HP_FONT.get();
 
         // Scoreboard health can exceed max health, so clamp the bar but show the raw value.
         float health = HealthResolver.resolve(shown);
@@ -177,10 +179,10 @@ public class TargetHUD extends Module {
         int friendColor = FriendManager.getInstance().getColor(name);
 
         // Unscaled units; Scale is a matrix pinned at the top-center anchor.
-        int textW = font.getStringWidth(name) + (hp != null ? TEXT_PAD + font.getStringWidth(hp) : 0);
+        int textW = font.getStringWidth(name) + (hp != null ? TEXT_PAD + hpFont.getStringWidth(hp) : 0);
         int colW = Math.max(MIN_COL_W, textW);
-        int panelW = PAD + HEAD + HEAD_GAP + colW + PAD;
-        int panelH = PAD + HEAD + PAD;
+        int panelW = Math.round(PAD + HEAD + HEAD_GAP + colW + PAD);
+        int panelH = Math.round(PAD + HEAD + PAD);
 
         ScaledResolution resolution = event.getResolution();
         // default sits 10px below the crosshair sprite
@@ -199,23 +201,23 @@ public class TargetHUD extends Module {
         }
         RenderUtil.pushScale(anchorX, top, s);
 
-        GlassShader.panel(left, top, panelW, panelH, RADIUS, GLASS_TOP, GLASS_BOTTOM, RIM, SHADOW);
+        GlassShader.panel(left, top, panelW, panelH, RADIUS, Glass.SMOKE_PANEL);
 
-        int headX = left + PAD;
-        int headY = top + PAD;
-        int colX = headX + HEAD + HEAD_GAP;
-        int textY = headY + 2;
-        int color = Color.HSBtoRGB(fraction / 3.0F, 0.62F, 0.96F); // red to green through yellow
+        float headX = left + PAD;
+        float headY = top + PAD;
+        float colX = headX + HEAD + HEAD_GAP;
+        float textY = headY + (HEAD - font.getHeight() - BAR_GAP - BAR_H) / 2.0F;
+        int color = Color.HSBtoRGB(fraction / 3.0F, 0.39F, 0.89F); // soft red to soft green
         font.drawString(name, colX, textY, friendColor != 0 ? friendColor : TEXT);
         if (hp != null) {
-            font.drawString(hp, colX + colW - font.getStringWidth(hp), textY, color);
+            hpFont.drawString(hp, colX + colW - hpFont.getStringWidth(hp),
+                    textY + font.getAscent() - hpFont.getAscent(), color);
         }
 
-        int barY = headY + HEAD - BAR_H - 1;
+        float barY = textY + font.getHeight() + BAR_GAP;
         GlassShader.rect(colX, barY, colW, BAR_H, BAR_H / 2.0F, TRACK, TRACK);
         GlassShader.rect(colX, barY, colW * trailFraction, BAR_H, BAR_H / 2.0F, TRAIL, TRAIL);
-        GlassShader.rect(colX, barY, colW * barFraction, BAR_H, BAR_H / 2.0F,
-                Color.HSBtoRGB(fraction / 3.0F, 0.70F, 0.70F), color);
+        GlassShader.rect(colX, barY, colW * barFraction, BAR_H, BAR_H / 2.0F, color, color);
 
         if (shown instanceof AbstractClientPlayer) {
             int tint = ColorMath.lerpArgb(0xFFFFFFFF, HURT, shown.hurtTime / 10.0F);
@@ -229,7 +231,7 @@ public class TargetHUD extends Module {
             RenderUtil.beginScissor(anchorX + (headX - anchorX) * s, top + (headY - top) * s,
                     HEAD * s, HEAD * s, resolution.getScaleFactor());
             GlStateManager.enableDepth(); // limb self-occlusion needs the depth test
-            GuiInventory.drawEntityOnScreen(headX + HEAD / 2, headY + 2 + Math.round(shown.height * modelScale),
+            GuiInventory.drawEntityOnScreen(Math.round(headX + HEAD / 2.0F), Math.round(headY + 2 + shown.height * modelScale),
                     modelScale, 0.0F, 0.0F, shown);
             // drawEntityOnScreen leaves colorMaterial enabled
             GlStateManager.disableColorMaterial();

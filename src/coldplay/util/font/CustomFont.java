@@ -108,9 +108,23 @@ public final class CustomFont {
         drawImmediate(text, x, y, argb);
     }
 
+    /** {@link #drawString} with {@code tracking} GUI px of extra space after each character. */
+    public void drawString(String text, float x, float y, int argb, float tracking) {
+        if ((argb & 0xFC000000) == 0) {
+            argb |= 0xFF000000;
+        }
+        WorldRenderer wr = beginDraw();
+        appendString(wr, text, x, y, argb, tracking);
+        endDraw();
+    }
+
+    public int getStringWidth(String text, float tracking) {
+        return getStringWidth(text) + Math.round(tracking * text.length());
+    }
+
     private void drawImmediate(String text, float x, float y, int argb) {
         WorldRenderer wr = beginDraw();
-        appendString(wr, text, x, y, argb);
+        appendString(wr, text, x, y, argb, 0.0F);
         endDraw();
     }
 
@@ -128,7 +142,7 @@ public final class CustomFont {
         return wr;
     }
 
-    private void appendString(WorldRenderer wr, String text, float x, float y, int argb) {
+    private void appendString(WorldRenderer wr, String text, float x, float y, int argb, float tracking) {
         int a = argb >>> 24 & 0xFF;
         int r = argb >> 16 & 0xFF;
         int g = argb >> 8 & 0xFF;
@@ -140,7 +154,7 @@ public final class CustomFont {
             if (c >= 32) {
                 appendGlyph(wr, c, penX, penY, r, g, b, a);
             }
-            penX += advance[c];
+            penX += advance[c] + tracking * supersample;
         }
     }
 
@@ -223,8 +237,8 @@ public final class CustomFont {
         float offset = 1f / supersample; // one device pixel at any GUI scale
         // Shadow first; both layers share one draw.
         WorldRenderer wr = beginDraw();
-        appendString(wr, text, x + offset, y + offset, shadow);
-        appendString(wr, text, x, y, argb);
+        appendString(wr, text, x + offset, y + offset, shadow, 0.0F);
+        appendString(wr, text, x, y, argb, 0.0F);
         endDraw();
     }
 

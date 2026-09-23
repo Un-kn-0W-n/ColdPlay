@@ -3,39 +3,38 @@ package coldplay.gui.click;
 import coldplay.ColdPlay;
 import coldplay.module.ModuleManager;
 import coldplay.config.ConfigManager;
-import coldplay.gui.Theme;
-import coldplay.gui.CustomSearchField;
 import coldplay.gui.CustomTextInput;
-import coldplay.gui.StyledButton;
+import coldplay.gui.GlassShader;
+import coldplay.gui.Icons;
 import coldplay.util.RenderUtil;
 import coldplay.util.font.CustomFont;
-import coldplay.util.font.Fonts;
 
 import net.minecraft.util.MathHelper;
 import org.lwjglx.input.Keyboard;
 
 import java.util.List;
 
-/** Config profile window opened from the Click GUI settings flyout. */
+/** Config profile window opened from either Click GUI. */
 public class ConfigWindow {
     private static final int WIDTH = 200;
-    private static final int HEADER = ClickGuiScreen.HEADER_HEIGHT;
+    private static final int HEADER = 24;
     private static final int NAME_ROW_H = 28;
     private static final int FIELD_H = 16;
     private static final int PAD = 6;
     private static final int FIELD_GAP = 6;
-    private static final int CREATE_FALLBACK_W = 50;
-    private static final int MIN_FIELD_W = 110;
     private static final int ICON_W = 16;
-    private static final int ICON_H = 12;
+    private static final int ICON_H = 14;
     private static final int ICON_GAP = 3;
     private static final int PROFILE_ROW_H = 22;
     private static final int MAX_VISIBLE_ROWS = 7; // fits a 240px-high screen
     private static final int MAX_NAME_LEN = 24;
     private static final int STATUS_H = 12;
     private static final long STATUS_HOLD_MS = 2500L;
+    private static final int DANGER = 0xFFE05A5A;
+    private static final int CLOSE = 18;
 
-    private final ClickGuiScreen screen;
+    private final Runnable onClose;
+    private final Skin skin;
     private final int screenWidth;
     private final int screenHeight;
 
@@ -50,24 +49,20 @@ public class ConfigWindow {
     private int cursorCounter;
     private String pendingDelete; // null unless a delete awaits confirmation
     private String status = "";
-    private int statusColor;
+    private boolean statusError;
     private long statusExpiresAt; // wall-clock millis
 
-    public ConfigWindow(ClickGuiScreen screen, int screenWidth, int screenHeight) {
-        this.screen = screen;
+    ConfigWindow(Runnable onClose, int screenWidth, int screenHeight, Skin skin) {
+        this.onClose = onClose;
+        this.skin = skin;
         this.screenWidth = screenWidth;
         this.screenHeight = screenHeight;
-        this.createW = computeCreateW();
+        this.createW = skin.label.get().getStringWidth("Create") + 14;
         refresh();
         // centered once; refresh() must not move the window
         x = (screenWidth - WIDTH) / 2;
         y = (screenHeight - height()) / 2;
         clampToScreen();
-    }
-
-    private static int computeCreateW() {
-        CustomFont font = Fonts.medium;
-        return font == null ? CREATE_FALLBACK_W : font.getStringWidth("Create") + 8;
     }
 
     static int fieldWidthFor(int createW) {
@@ -120,46 +115,47 @@ public class ConfigWindow {
         return RenderUtil.hovered(mouseX, mouseY, x, y, WIDTH, height());
     }
 
+    private float closeX() {
+        return x + WIDTH - 4.5F - CLOSE;
+    }
+
+    private float closeY() {
+        return y + (HEADER - CLOSE) / 2.0F;
+    }
+
     public void render(int mouseX, int mouseY) {
-        CustomFont font = Fonts.medium;
-        if (font == null) {
-            return;
-        }
+        CustomFont font = skin.label.get();
         cursorCounter++;
         int h = height();
 
-        ClickGuiScreen.drawWindowBase(x, y, WIDTH, h);
-        ClickGuiScreen.drawWindowHeader(font, "Config", x, y, WIDTH, mouseX, mouseY);
+        GlassShader.panel(x, y, WIDTH, h, skin.radius, skin.glass);
+        CustomFont title = skin.heading.get();
+        title.drawString("Config", x + 9, y + (HEADER - title.getHeight()) / 2.0F, skin.strong);
+        boolean closeHover = RenderUtil.hovered(mouseX, mouseY, closeX(), closeY(), CLOSE, CLOSE);
+        if (closeHover) {
+            GlassShader.rect(closeX(), closeY(), CLOSE, CLOSE, 3.75F, skin.hover, skin.hover);
+        }
+        Icons.draw(Icons.Icon.CLOSE, closeX() + 4.5F, closeY() + 4.5F, 9.0F, 2.8F, closeHover ? skin.strong : skin.mute);
+        GlassShader.rect(x, y + HEADER - 0.75F, WIDTH, 0.75F, 0.0F, skin.line, skin.line);
 
-        renderNameRow(font, mouseX, mouseY);
+        int fy = fieldY();
+        Widgets.field(font, fieldX(), fy, fieldWidth(), FIELD_H, nameInput, fieldFocused, "config name",
+                cursorCounter, skin);
+        boolean createHover = RenderUtil.hovered(mouseX, mouseY, createX(), fy, createW, FIELD_H);
+        int createFill = createHover ? (skin.accent & 0x00FFFFFF) | 0xD9000000 : skin.accent;
+        GlassShader.rect(createX(), fy, createW, FIELD_H, FIELD_H / 2.0F, createFill, createFill);
+        font.drawCenteredInRect("Create", createX(), fy, createW, FIELD_H, skin.onAccent);
 
         int visible = Math.min(names.size(), MAX_VISIBLE_ROWS);
         int top = rowsTop();
         for (int i = 0; i < visible; i++) {
-            int rowY = top + i * PROFILE_ROW_H;
-            renderRow(font, names.get(scrollOffset + i), rowY, mouseX, mouseY);
-            if (i > 0) {
-                RenderUtil.rectBounds(x, rowY, x + WIDTH, rowY + 1, Theme.SEP);
-            }
+            renderRow(font, names.get(scrollOffset + i), top + i * PROFILE_ROW_H, mouseX, mouseY);
         }
         if (names.isEmpty()) {
-            float ty = top + (PROFILE_ROW_H - font.getHeight()) / 2f;
-            font.drawString("No profiles yet", x + PAD, ty, Theme.TEXT_MUTE);
+            font.drawString("No profiles yet", x + PAD + 3, top + (PROFILE_ROW_H - font.getHeight()) / 2f, skin.mute);
         }
         renderScrollIndicator(visible);
-
         renderStatus(font, h);
-
-        ClickGuiScreen.drawWindowFrame(x, y, WIDTH, h);
-    }
-
-    private void renderNameRow(CustomFont font, int mouseX, int mouseY) {
-        int fy = fieldY();
-        CustomSearchField.draw(font, fieldX(), fy, fieldWidth(), FIELD_H, nameInput, fieldFocused,
-                "config name", cursorCounter);
-
-        StyledButton.draw(font, "Create", createX(), fy, createW, FIELD_H,
-                mouseX, mouseY, true, Theme.WELL, Theme.TEXT);
     }
 
     /** Indicator only; scrolling is by wheel. */
@@ -168,13 +164,10 @@ public class ConfigWindow {
         if (maxOffset <= 0) {
             return;
         }
-        int trackX = x + WIDTH - 2;
-        int trackY = rowsTop();
         int trackH = visible * PROFILE_ROW_H;
         int thumbH = RenderUtil.scrollThumbHeight(trackH, visible, names.size());
-        RenderUtil.rect(trackX, trackY, 1, trackH, Theme.SEP);
-        RenderUtil.rect(trackX, trackY + RenderUtil.scrollThumbOffset(trackH, thumbH, scrollOffset, maxOffset),
-                1, thumbH, Theme.FROST);
+        int thumbY = rowsTop() + RenderUtil.scrollThumbOffset(trackH, thumbH, scrollOffset, maxOffset);
+        GlassShader.rect(x + WIDTH - 3, thumbY, 2, thumbH, 1.0F, skin.mute, skin.mute);
     }
 
     private void renderStatus(CustomFont font, int h) {
@@ -182,39 +175,37 @@ public class ConfigWindow {
             return;
         }
         float ty = y + h - PAD - STATUS_H + (STATUS_H - font.getHeight()) / 2f;
-        font.drawString(font.trimToWidth(status, WIDTH - PAD * 2, "..."), x + PAD, ty, statusColor);
+        font.drawString(font.trimToWidth(status, WIDTH - PAD * 2, "..."), x + PAD + 3, ty, statusError ? DANGER : skin.text);
     }
 
     private void renderRow(CustomFont font, String name, int rowY, int mouseX, int mouseY) {
         int nameW = updateIconX() - ICON_GAP - (x + PAD);
-        if (RenderUtil.hovered(mouseX, mouseY, x, rowY, nameW + PAD, PROFILE_ROW_H)) {
-            RenderUtil.rect(x, rowY, nameW + PAD, PROFILE_ROW_H, Theme.HOVER_LIFT);
+        if (RenderUtil.hovered(mouseX, mouseY, x + PAD, rowY, nameW, PROFILE_ROW_H)) {
+            GlassShader.rect(x + PAD - 1, rowY + 2, nameW, PROFILE_ROW_H - 4, 4.5F, skin.hover, skin.hover);
         }
-        float textY = rowY + (PROFILE_ROW_H - font.getHeight()) / 2f;
-        font.drawString(font.trimToWidth(name, nameW, "..."), x + PAD, textY, Theme.TEXT);
+        font.drawString(font.trimToWidth(name, nameW - 6, "..."), x + PAD + 3,
+                rowY + (PROFILE_ROW_H - font.getHeight()) / 2f, skin.text);
 
         int iy = iconY(rowY);
         boolean armed = name.equals(pendingDelete);
-        drawIconButton(updateIconX(), iy, Theme.WELL, mouseX, mouseY);
-        glyphUpdate(updateIconX() + 2, iy, Theme.TEXT_DIM, Theme.WELL);
-        drawIconButton(renameIconX(), iy, Theme.WELL, mouseX, mouseY);
-        glyphRename(renameIconX() + 2, iy, Theme.TEXT_DIM);
-        drawIconButton(deleteIconX(), iy, armed ? Theme.DANGER : Theme.WELL, mouseX, mouseY);
-        glyphDelete(deleteIconX() + 2, iy, armed ? Theme.TEXT : Theme.DANGER,
-                armed ? Theme.DANGER : Theme.WELL);
+        iconButton(updateIconX(), iy, skin.field, mouseX, mouseY);
+        glyphUpdate(updateIconX() + 2, iy + 1, skin.dim);
+        iconButton(renameIconX(), iy, skin.field, mouseX, mouseY);
+        glyphRename(renameIconX() + 2, iy + 1, skin.dim);
+        iconButton(deleteIconX(), iy, armed ? DANGER : skin.field, mouseX, mouseY);
+        glyphDelete(deleteIconX() + 2, iy + 1, armed ? 0xFFFFFFFF : DANGER);
     }
 
-    private static void drawIconButton(int bx, int by, int bg, int mouseX, int mouseY) {
-        RenderUtil.rect(bx, by, ICON_W, ICON_H, bg);
-        RenderUtil.outline(bx, by, bx + ICON_W, by + ICON_H, 1,
-                RenderUtil.hovered(mouseX, mouseY, bx, by, ICON_W, ICON_H) ? Theme.CONTOUR : Theme.SEP);
+    private void iconButton(int bx, int by, int fill, int mouseX, int mouseY) {
+        GlassShader.rect(bx, by, ICON_W, ICON_H, 3.75F, fill, fill);
+        GlassShader.stroke(bx, by, ICON_W, ICON_H, 3.75F,
+                RenderUtil.hovered(mouseX, mouseY, bx, by, ICON_W, ICON_H) ? skin.dim : skin.fieldLine);
     }
 
-    // 12x12 pixel glyphs; cutouts are painted in the button background.
-    private static void glyphUpdate(int gx, int gy, int fg, int bg) {
-        RenderUtil.rect(gx + 1, gy + 1, 10, 10, fg); // floppy body
-        RenderUtil.rect(gx + 3, gy + 2, 6, 3, bg);   // shutter
-        RenderUtil.rect(gx + 3, gy + 7, 6, 4, bg);   // label
+    // 12x12 pixel glyphs drawn as strokes.
+    private static void glyphUpdate(int gx, int gy, int fg) {
+        GlassShader.stroke(gx + 1.5F, gy + 1.5F, 9, 9, 1.5F, fg); // floppy body
+        RenderUtil.rect(gx + 4, gy + 2, 4, 3, fg);                 // shutter
     }
 
     private static void glyphRename(int gx, int gy, int fg) {
@@ -225,12 +216,10 @@ public class ConfigWindow {
         RenderUtil.rect(gx + 1, gy + 9, 2, 2, fg);   // tip
     }
 
-    private static void glyphDelete(int gx, int gy, int fg, int bg) {
+    private static void glyphDelete(int gx, int gy, int fg) {
         RenderUtil.rect(gx + 4, gy, 4, 1, fg);       // handle
         RenderUtil.rect(gx + 2, gy + 1, 8, 2, fg);   // lid
-        RenderUtil.rect(gx + 2, gy + 3, 8, 9, fg);   // body
-        RenderUtil.rect(gx + 4, gy + 5, 1, 5, bg);   // slots
-        RenderUtil.rect(gx + 7, gy + 5, 1, 5, bg);
+        GlassShader.stroke(gx + 2.5F, gy + 3.5F, 7, 7.5F, 1.0F, fg); // body
     }
 
     /** Consumes every click inside the window. */
@@ -241,13 +230,10 @@ public class ConfigWindow {
         if (button != 0) {
             return true;
         }
-        if (Fonts.medium == null) {
-            return true;
-        }
         String armed = pendingDelete;
         pendingDelete = null; // any other click disarms the delete
-        if (ClickGuiScreen.hitsClose(x, y, WIDTH, HEADER, mouseX, mouseY)) {
-            screen.closeConfigWindow();
+        if (RenderUtil.hovered(mouseX, mouseY, closeX(), closeY(), CLOSE, CLOSE)) {
+            onClose.run();
             return true;
         }
         if (RenderUtil.hovered(mouseX, mouseY, fieldX(), fieldY(), fieldWidth(), FIELD_H)) {
@@ -296,8 +282,7 @@ public class ConfigWindow {
             create();
             return;
         }
-        CustomTextInput.EditResult edit = CustomTextInput.edit(
-                nameInput, typedChar, keyCode, MAX_NAME_LEN);
+        CustomTextInput.EditResult edit = CustomTextInput.edit(nameInput, typedChar, keyCode, MAX_NAME_LEN);
         nameInput = edit.getValue();
         fieldFocused = edit.isFocused();
     }
@@ -314,34 +299,34 @@ public class ConfigWindow {
         scrollOffset = MathHelper.clamp_int(scrollOffset + (dWheel > 0 ? -1 : 1), 0, maxOffset);
     }
 
-    private void setStatus(String message, int color) {
+    private void setStatus(String message, boolean error) {
         status = message;
-        statusColor = color;
+        statusError = error;
         statusExpiresAt = System.currentTimeMillis() + STATUS_HOLD_MS;
     }
 
     private void create() {
         String n = ConfigManager.sanitizeName(nameInput);
         if (n.isEmpty()) {
-            setStatus("Enter a name", Theme.DANGER);
+            setStatus("Enter a name", true);
             return;
         }
         if (containsIgnoreCase(n)) {
-            setStatus("Name in use", Theme.DANGER);
+            setStatus("Name in use", true);
             return;
         }
         if (!ColdPlay.getInstance().getConfigManager().saveProfile(n, moduleManager())) {
-            setStatus("Create failed", Theme.DANGER);
+            setStatus("Create failed", true);
             return;
         }
         nameInput = "";
-        setStatus("Created", Theme.TEXT);
+        setStatus("Created", false);
         refresh();
     }
 
     private void update(String name) {
         boolean saved = ColdPlay.getInstance().getConfigManager().saveProfile(name, moduleManager());
-        setStatus(saved ? "Saved" : "Save failed", saved ? Theme.TEXT : Theme.DANGER);
+        setStatus(saved ? "Saved" : "Save failed", !saved);
     }
 
     private void rename(String old) {
@@ -350,35 +335,35 @@ public class ConfigWindow {
             nameInput = old;
             fieldFocused = true;
             cursorCounter = 0;
-            setStatus("Edit the name", Theme.TEXT);
+            setStatus("Edit the name", false);
             return;
         }
         if (containsIgnoreCase(n)) {
-            setStatus("Name in use", Theme.DANGER);
+            setStatus("Name in use", true);
             return;
         }
         if (!ColdPlay.getInstance().getConfigManager().renameProfile(old, n)) {
-            setStatus("Rename failed", Theme.DANGER);
+            setStatus("Rename failed", true);
             return;
         }
         nameInput = "";
-        setStatus("Renamed", Theme.TEXT);
+        setStatus("Renamed", false);
         refresh();
     }
 
     private void delete(String name) {
         boolean deleted = ColdPlay.getInstance().getConfigManager().deleteProfile(name);
-        setStatus(deleted ? "Deleted" : "Delete failed", deleted ? Theme.TEXT : Theme.DANGER);
+        setStatus(deleted ? "Deleted" : "Delete failed", !deleted);
         refresh();
     }
 
     private void load(String name) {
         if (!ColdPlay.getInstance().getConfigManager().loadProfile(name, moduleManager())) {
-            setStatus("Load failed", Theme.DANGER);
+            setStatus("Load failed", true);
             return;
         }
         ColdPlay.getInstance().saveConfig();
-        setStatus("Loaded", Theme.TEXT);
+        setStatus("Loaded", false);
     }
 
     private boolean containsIgnoreCase(String n) {

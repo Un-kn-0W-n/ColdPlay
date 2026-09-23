@@ -1,26 +1,29 @@
 package coldplay.gui.click;
 
-import coldplay.gui.Theme;
-import coldplay.util.RenderUtil;
+import coldplay.gui.GlassShader;
 import net.minecraft.util.MathHelper;
 
 /** Slider track shared by number and range settings. */
 final class SliderTrack {
     private final int x;
-    private final int y;
+    private final float y;
     private final int width;
+    private final Skin skin;
+    private final float height;
 
-    SliderTrack(int x, int y, int width) {
+    SliderTrack(int x, float y, int width, Skin skin) {
         this.x = x;
         this.y = y;
         this.width = Math.max(0, width);
+        this.skin = skin;
+        this.height = skin.milk ? 3.0F : 2.25F;
     }
 
     void drawSingle(double value, double min, double max) {
         drawBase();
         int thumb = position(value, min, max);
-        RenderUtil.rect(x, y, Math.max(0, thumb - x), 3, Theme.FROST);
-        RenderUtil.rect(thumb - 1, y - 2, 3, 7, Theme.FROST);
+        GlassShader.rect(x, y, thumb - x, height, height / 2.0F, skin.accent, skin.accent);
+        knob(thumb);
     }
 
     void drawRange(double lo, double hi, double min, double max) {
@@ -30,9 +33,9 @@ final class SliderTrack {
         }
         int loX = position(lo, min, max);
         int hiX = position(hi, min, max);
-        RenderUtil.rect(loX, y, Math.max(1, hiX - loX), 3, Theme.FROST);
-        RenderUtil.rect(loX - 1, y - 1, 3, 5, Theme.FROST);
-        RenderUtil.rect(hiX - 1, y - 1, 3, 5, Theme.FROST);
+        GlassShader.rect(loX, y, Math.max(1, hiX - loX), height, height / 2.0F, skin.accent, skin.accent);
+        knob(loX);
+        knob(hiX);
     }
 
     double valueAt(int mouseX, double min, double max) {
@@ -53,7 +56,19 @@ final class SliderTrack {
     }
 
     private void drawBase() {
-        RenderUtil.rect(x, y, width, 3, Theme.WELL);
+        GlassShader.rect(x, y, width, height, height / 2.0F, skin.well, skin.well);
+    }
+
+    /** Smoke: white dot in a faint accent ring. Milk: a larger white knob with a drop shadow. */
+    private void knob(int cx) {
+        float cy = y + height / 2.0F;
+        if (skin.milk) {
+            GlassShader.fill(cx - 5.25F, cy - 5.25F, 10.5F, 10.5F, 5.25F, 0xFFFFFFFF, 2.5F, 0.75F, 0.3F);
+            return;
+        }
+        int ring = (skin.accent & 0x00FFFFFF) | 0x59000000;
+        GlassShader.rect(cx - 4.875F, cy - 4.875F, 9.75F, 9.75F, 4.875F, ring, ring);
+        GlassShader.rect(cx - 3.375F, cy - 3.375F, 6.75F, 6.75F, 3.375F, 0xFFFFFFFF, 0xFFFFFFFF);
     }
 
     private int position(double value, double min, double max) {

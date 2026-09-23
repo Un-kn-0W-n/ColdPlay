@@ -1,12 +1,16 @@
 package coldplay.gui.click;
 
 import coldplay.ColdPlay;
+import coldplay.gui.Glass;
+import coldplay.gui.GlassShader;
+import coldplay.gui.Icons;
 import coldplay.gui.Theme;
 import coldplay.module.Category;
 import coldplay.module.Module;
 import coldplay.util.Animation;
 import coldplay.util.RenderUtil;
 import coldplay.util.font.CustomFont;
+import coldplay.util.font.FontRef;
 import coldplay.util.font.Fonts;
 
 import net.minecraft.util.MathHelper;
@@ -14,13 +18,16 @@ import net.minecraft.util.MathHelper;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Draggable Click GUI panel listing one category's modules. */
+/** Draggable glass panel listing one category's modules; the count at the right of the header folds it. */
 public class CategoryPanel {
 
-    private static final int ARROW_X = 5;
-    private static final int NAME_X = 14;
-    private static final int RIGHT_PAD = 8;
-    private static final int MIN_WIDTH = 78;
+    private static final int PAD = 9;
+    private static final int MIN_WIDTH = 132;
+    private static final int BOTTOM_PAD = 4;
+    private static final int FOLD_W = 40; // header strip at the right that folds the panel
+    private static final float CHEVRON = 6.0F;
+    private static final float RADIUS = 6.0F;
+    private static final FontRef COUNT = new FontRef(Fonts.GEIST_MONO, 8.25F);
 
     private final Category category;
     private final List<ModuleButton> buttons = new ArrayList<ModuleButton>();
@@ -46,78 +53,72 @@ public class CategoryPanel {
     }
 
     private int computeWidth() {
-        CustomFont font = Fonts.medium;
-        if (font == null) {
-            return ClickGuiScreen.FALLBACK_WIDTH;
-        }
-        int w = NAME_X + font.getStringWidth(category.name()) + RIGHT_PAD;
+        int w = MIN_WIDTH;
         for (ModuleButton b : buttons) {
-            w = Math.max(w, ModuleButton.preferredWidth(b.getModule(), font));
+            w = Math.max(w, ModuleButton.preferredWidth(b.getModule()));
         }
-        return Math.max(w, MIN_WIDTH);
+        return w;
     }
 
-    public void render(int mouseX, int mouseY, Module listeningModule, int scaleFactor) {
-        renderContent(mouseX, mouseY, listeningModule, scaleFactor);
-        renderChrome();
+    static String label(Category category) {
+        String name = category.name();
+        return name.charAt(0) + name.substring(1).toLowerCase();
     }
 
-    /** Split from renderChrome so docked panels can share one border. */
-    public void renderContent(int mouseX, int mouseY, Module listeningModule, int scaleFactor) {
-        CustomFont font = Fonts.medium;
-        if (font == null) {
-            return;
-        }
+    public void render(int mouseX, int mouseY, Module listeningModule, Module selected, int scaleFactor) {
+        Skin skin = Skin.SMOKE;
         double p = Theme.step(reveal, collapsed ? 0.0 : 1.0);
-        int visRowsH = (int) Math.round(visibleCount() * ClickGuiScreen.ROW_HEIGHT * p);
-        visualHeight = ClickGuiScreen.HEADER_HEIGHT + visRowsH;
+        int rowsH = (int) Math.round(visibleCount() * ClickGuiScreen.ROW_HEIGHT * p);
+        visualHeight = ClickGuiScreen.HEADER_HEIGHT + rowsH + (int) Math.round(BOTTOM_PAD * p);
 
-        ClickGuiScreen.drawWindowBase(x, y, width, visualHeight);
-        int textY = y + (ClickGuiScreen.HEADER_HEIGHT - font.getHeight()) / 2;
-        drawArrow(x + ARROW_X, y + (ClickGuiScreen.HEADER_HEIGHT - 5) / 2, collapsed, Theme.TEXT_DIM);
-        font.drawString(category.name(), x + NAME_X, textY, Theme.TEXT);
+        GlassShader.panel(x, y, width, visualHeight, RADIUS, Glass.SMOKE_PANEL);
+        int header = ClickGuiScreen.HEADER_HEIGHT;
+        CustomFont title = skin.title.get();
+        title.drawString(label(category), x + PAD, y + (header - title.getHeight()) / 2.0F, skin.strong);
+        CustomFont count = COUNT.get();
+        String text = enabledCount() + "/" + buttons.size();
+        float chevX = x + width - PAD - CHEVRON;
+        count.drawString(text, chevX - 4 - count.getStringWidth(text), y + (header - count.getHeight()) / 2.0F,
+                0x80FFFFFF);
+        boolean foldHover = RenderUtil.hovered(mouseX, mouseY, x + width - FOLD_W, y, FOLD_W, header);
+        Icons.draw(collapsed ? Icons.Icon.CHEVRON_RIGHT : Icons.Icon.CHEVRON_DOWN, chevX,
+                y + (header - CHEVRON) / 2.0F, CHEVRON, 3.0F, foldHover ? 0xCCFFFFFF : 0x66FFFFFF);
 
-        if (visRowsH > 0) {
-            RenderUtil.beginScissor(x, y + ClickGuiScreen.HEADER_HEIGHT, width, visRowsH, scaleFactor);
-            int rowY = y + ClickGuiScreen.HEADER_HEIGHT;
+        if (rowsH > 0) {
+            GlassShader.rect(x, y + header - 0.75F, width, 0.75F, 0.0F, skin.line, skin.line);
+            RenderUtil.beginScissor(x, y + header, width, rowsH, scaleFactor);
+            int rowY = y + header;
             for (ModuleButton button : buttons) {
                 if (!ClickGuiScreen.matchesSearch(button.getModule())) {
                     continue;
                 }
-                button.render(x, rowY, width, mouseX, mouseY, button.getModule() == listeningModule);
-                if (rowY > y + ClickGuiScreen.HEADER_HEIGHT) {
-                    RenderUtil.rectBounds(x, rowY, x + width, rowY + 1, Theme.SEP);
-                }
+                button.render(x, rowY, width, mouseX, mouseY, button.getModule() == listeningModule,
+                        button.getModule() == selected);
                 rowY += ClickGuiScreen.ROW_HEIGHT;
             }
             RenderUtil.endScissor();
         }
     }
 
-    /** Drawn after content so row separators do not cover the border. */
-    public void renderChrome() {
-        ClickGuiScreen.drawWindowFrame(x, y, width, visualHeight);
-    }
-
-    /** 5x5 pixel triangle; the font has no arrow glyph. */
-    private static void drawArrow(int ax, int ay, boolean collapsed, int color) {
-        for (int i = 0; i < 3; i++) {
-            if (collapsed) {
-                RenderUtil.rectBounds(ax + i, ay + i, ax + i + 1, ay + 5 - i, color);
-            } else {
-                RenderUtil.rectBounds(ax + i, ay + i, ax + 5 - i, ay + i + 1, color);
+    private int enabledCount() {
+        int n = 0;
+        for (ModuleButton b : buttons) {
+            if (b.getModule().isEnabled()) {
+                n++;
             }
         }
+        return n;
     }
 
     public boolean mouseClicked(int mouseX, int mouseY, int button, ClickGuiScreen screen) {
-        if (button == 0 && RenderUtil.hovered(mouseX, mouseY, x, y, NAME_X, ClickGuiScreen.HEADER_HEIGHT)) {
+        int header = ClickGuiScreen.HEADER_HEIGHT;
+        if (button == 0 && RenderUtil.hovered(mouseX, mouseY, x + width - FOLD_W, y, FOLD_W, header)) {
             collapsed = !collapsed;
             persistAndSave();
             return true;
         }
         // Consume header clicks even when they do not start a drag.
-        if (RenderUtil.hovered(mouseX, mouseY, x, y, width, ClickGuiScreen.HEADER_HEIGHT)) {
+        if (RenderUtil.hovered(mouseX, mouseY, x, y, width, header)) {
             if (button == 0) {
                 windowDrag.begin(mouseX, mouseY, x, y);
             }
@@ -126,19 +127,18 @@ public class CategoryPanel {
         if (collapsed) {
             return false;
         }
-        int rowY = y + ClickGuiScreen.HEADER_HEIGHT;
+        int rowY = y + header;
         for (ModuleButton b : buttons) {
             if (!ClickGuiScreen.matchesSearch(b.getModule())) {
                 continue;
             }
             if (RenderUtil.hovered(mouseX, mouseY, x, rowY, width, ClickGuiScreen.ROW_HEIGHT)) {
-                boolean qmark = button == 0 && b.isOverQmark(mouseX, mouseY, x, rowY, width);
-                screen.handleModuleClick(this, b.getModule(), qmark ? 1 : button);
+                screen.handleModuleClick(this, b.getModule(), button);
                 return true;
             }
             rowY += ClickGuiScreen.ROW_HEIGHT;
         }
-        return false;
+        return RenderUtil.hovered(mouseX, mouseY, x, y, width, totalHeight());
     }
 
     public void drag(int mouseX, int mouseY, int screenWidth, int screenHeight) {
@@ -187,15 +187,6 @@ public class CategoryPanel {
         return collapsed;
     }
 
-    /** Logical height, not the animated one. */
-    public int getHeight() {
-        return totalHeight();
-    }
-
-    public int getVisualHeight() {
-        return visualHeight;
-    }
-
     /** -1 when the row is hidden or absent. */
     public int rowTop(Module module) {
         if (collapsed) {
@@ -242,7 +233,8 @@ public class CategoryPanel {
     }
 
     private int totalHeight() {
-        return ClickGuiScreen.HEADER_HEIGHT + (collapsed ? 0 : visibleCount() * ClickGuiScreen.ROW_HEIGHT);
+        return ClickGuiScreen.HEADER_HEIGHT
+                + (collapsed ? 0 : visibleCount() * ClickGuiScreen.ROW_HEIGHT + BOTTOM_PAD);
     }
 
     private int visibleCount() {

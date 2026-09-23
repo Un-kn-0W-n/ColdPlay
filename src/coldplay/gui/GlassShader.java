@@ -1,6 +1,7 @@
 package coldplay.gui;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.Tessellator;
@@ -13,8 +14,9 @@ import org.apache.logging.log4j.Logger;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
 
-/** Anti-aliased rounded shapes for glass HUD panels, with a soft shadow and a blurred copy of the frame behind them. */
+/** Anti-aliased rounded shapes for glass panels, with a soft shadow and a blurred copy of the frame behind them. */
 public final class GlassShader {
 
     private static final Logger logger = LogManager.getLogger();
@@ -38,10 +40,16 @@ public final class GlassShader {
             + "uniform vec4 color1;\n"
             + "uniform vec2 gradient;\n"
             + "uniform vec4 border;\n"
+            + "uniform float rimFade;\n"
             + "uniform float shadow;\n"
+            + "uniform float shadowOffset;\n"
+            + "uniform float shadowAlpha;\n"
             + "uniform int mode;\n"
             + "uniform vec4 uv;\n"
             + "uniform vec2 screen;\n"
+            + "uniform float blurStep;\n"
+            + "uniform float lod;\n"
+            + "uniform float saturation;\n"
             + "uniform sampler2D image;\n"
             + "varying vec2 local;\n"
             + "float box(vec2 p) {\n"
@@ -51,16 +59,17 @@ public final class GlassShader {
             + "vec3 backdrop() {\n"
             + "    vec3 sum = vec3(0.0);\n"
             + "    float total = 0.0;\n"
-            + "    for (int x = -5; x <= 5; x++) {\n"
-            + "        for (int y = -5; y <= 5; y++) {\n"
-            + "            vec2 o = vec2(float(x), float(y)) * 2.0;\n"
-            + "            float w = exp(-dot(o, o) / 72.0);\n"
-            // the half-pixel offset makes each linear tap average a 2x2 block
-            + "            sum += texture2D(image, (gl_FragCoord.xy + o + 0.5) / screen).rgb * w;\n"
+            + "    for (int x = -4; x <= 4; x++) {\n"
+            + "        for (int y = -4; y <= 4; y++) {\n"
+            + "            vec2 k = vec2(float(x), float(y));\n"
+            + "            float w = exp(-dot(k, k) / 18.0);\n"
+            // the bias reads a mip level already averaged over about one tap spacing
+            + "            sum += texture2D(image, (gl_FragCoord.xy + k * blurStep) / screen, lod).rgb * w;\n"
             + "            total += w;\n"
             + "        }\n"
             + "    }\n"
-            + "    return sum / total;\n"
+            + "    vec3 c = sum / total;\n"
+            + "    return mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, saturation);\n"
             + "}\n"
             + "void main() {\n"
             + "    float d = box(local);\n"
@@ -75,13 +84,13 @@ public final class GlassShader {
             + "        fill *= texture2D(image, mix(uv.xy, uv.zw, clamp(t, 0.0, 0.999)));\n"
             + "    }\n"
             // one device pixel rim, brighter along the top like light on glass
-            + "    float rim = border.a * (1.0 - inner) * (1.0 - 0.55 * clamp(t.y, 0.0, 1.0));\n"
+            + "    float rim = border.a * (1.0 - inner) * (1.0 - rimFade * clamp(t.y, 0.0, 1.0));\n"
             + "    fill = vec4(mix(fill.rgb, border.rgb, rim), fill.a + (1.0 - fill.a) * rim);\n"
             + "    float body = fill.a * cover;\n"
             + "    float shade = 0.0;\n"
             + "    if (shadow > 0.0) {\n"
-            + "        float s = clamp(1.0 - box(local - vec2(0.0, 1.0)) / shadow, 0.0, 1.0);\n"
-            + "        shade = 0.45 * s * s;\n"
+            + "        float s = clamp(1.0 - box(local - vec2(0.0, shadowOffset)) / shadow, 0.0, 1.0);\n"
+            + "        shade = shadowAlpha * s * s;\n"
             + "    }\n"
             + "    float alpha = body + shade * (1.0 - body);\n"
             + "    gl_FragColor = vec4(fill.rgb * body / max(alpha, 0.0001), alpha);\n"
@@ -96,18 +105,46 @@ public final class GlassShader {
     private GlassShader() {
     }
 
-    /** Blurs what is already drawn under the panel and tints it, fading from {@code top} to {@code bottom}. */
-    public static void panel(float x, float y, float w, float h, float r, int top, int bottom, int rim, float shadow) {
+    /** Blurs what is already drawn under the panel and tints it with the glass. */
+    public static void panel(float x, float y, float w, float h, float r, Glass glass) {
+        capture();
+        frost(x, y, w, h, r, glass);
+    }
+
+    /** Copies the frame once for a run of {@link #frost} panels that do not overlap. */
+    public static void capture() {
+        copyBackdrop();
+    }
+
+    /** {@link #panel} over the frame taken by the last {@link #capture()}. */
+    public static void frost(float x, float y, float w, float h, float r, Glass glass) {
         if (use()) {
-            copyBackdrop();
-            draw(x, y, w, h, r, top, bottom, true, rim, shadow, BLUR);
+            GlStateManager.bindTexture(backdrop); // text drawn since the capture rebinds unit 0
+            blurUniforms(glass);
+            draw(x, y, w, h, r, glass.top, glass.bottom, true, glass.rim, 0.55F,
+                    glass.shadow, glass.shadowOffset, glass.shadowAlpha, BLUR);
         }
     }
 
     /** Flat fill fading from {@code left} to {@code right}. */
     public static void rect(float x, float y, float w, float h, float r, int left, int right) {
         if (w > 0.0F && use()) {
-            draw(x, y, w, h, r, left, right, false, 0, 0.0F, FLAT);
+            draw(x, y, w, h, r, left, right, false, 0, 0.0F, 0.0F, 0.0F, 0.0F, FLAT);
+        }
+    }
+
+    /** Flat fill with a soft drop shadow. */
+    public static void fill(float x, float y, float w, float h, float r, int color,
+                            float shadow, float shadowOffset, float shadowAlpha) {
+        if (w > 0.0F && use()) {
+            draw(x, y, w, h, r, color, color, false, 0, 0.0F, shadow, shadowOffset, shadowAlpha, FLAT);
+        }
+    }
+
+    /** One device pixel outline, even all the way round. */
+    public static void stroke(float x, float y, float w, float h, float r, int color) {
+        if (w > 0.0F && use()) {
+            draw(x, y, w, h, r, color & 0x00FFFFFF, color & 0x00FFFFFF, false, color, 0.0F, 0.0F, 0.0F, 0.0F, FLAT);
         }
     }
 
@@ -115,8 +152,8 @@ public final class GlassShader {
     public static void image(float x, float y, float w, float h, float r,
                              float u0, float v0, float u1, float v1, int tint) {
         if (use()) {
-            GL20.glUniform4f(GL20.glGetUniformLocation(program, "uv"), u0, v0, u1, v1);
-            draw(x, y, w, h, r, tint, tint, false, 0, 0.0F, IMAGE);
+            GL20.glUniform4f(uniform("uv"), u0, v0, u1, v1);
+            draw(x, y, w, h, r, tint, tint, false, 0, 0.0F, 0.0F, 0.0F, 0.0F, IMAGE);
         }
     }
 
@@ -131,8 +168,17 @@ public final class GlassShader {
         return true;
     }
 
+    /** Taps spaced a third of the sigma apart, read from the mip level that averages about one spacing. */
+    private static void blurUniforms(Glass glass) {
+        int scale = new ScaledResolution(Minecraft.getMinecraft()).getScaleFactor();
+        float step = Math.max(1.0F, glass.blur * scale / 3.0F);
+        GL20.glUniform1f(uniform("blurStep"), step);
+        GL20.glUniform1f(uniform("lod"), (float) (Math.log(step) / Math.log(2.0)));
+        GL20.glUniform1f(uniform("saturation"), glass.saturation);
+    }
+
     private static void draw(float x, float y, float w, float h, float r, int c0, int c1, boolean vertical,
-                             int rim, float shadow, int mode) {
+                             int rim, float rimFade, float shadow, float shadowOffset, float shadowAlpha, int mode) {
         Minecraft mc = Minecraft.getMinecraft();
         GL20.glUniform2f(uniform("origin"), x, y);
         GL20.glUniform2f(uniform("size"), w, h);
@@ -141,14 +187,17 @@ public final class GlassShader {
         color("color1", c1);
         GL20.glUniform2f(uniform("gradient"), vertical ? 0.0F : 1.0F, vertical ? 1.0F : 0.0F);
         color("border", rim);
+        GL20.glUniform1f(uniform("rimFade"), rimFade);
         GL20.glUniform1f(uniform("shadow"), shadow);
+        GL20.glUniform1f(uniform("shadowOffset"), shadowOffset);
+        GL20.glUniform1f(uniform("shadowAlpha"), shadowAlpha);
         GL20.glUniform1i(uniform("mode"), mode);
         GL20.glUniform2f(uniform("screen"), mc.displayWidth, mc.displayHeight);
 
         GlStateManager.enableBlend();
         GlStateManager.disableAlpha(); // the shadow fades below the alpha test cutoff
         GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0);
-        float m = shadow + 1.0F; // room for the shadow and the edge fade
+        float m = shadow + Math.abs(shadowOffset) + 1.0F; // room for the shadow and the edge fade
         Tessellator tessellator = Tessellator.getInstance();
         WorldRenderer wr = tessellator.getWorldRenderer();
         wr.begin(7, DefaultVertexFormats.POSITION);
@@ -177,7 +226,7 @@ public final class GlassShader {
         if (backdrop == 0) {
             backdrop = GL11.glGenTextures();
             GlStateManager.bindTexture(backdrop);
-            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
+            GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR_MIPMAP_LINEAR);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
             GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
@@ -190,6 +239,7 @@ public final class GlassShader {
         } else {
             GL11.glCopyTexSubImage2D(GL11.GL_TEXTURE_2D, 0, 0, 0, 0, 0, backdropW, backdropH);
         }
+        GL30.glGenerateMipmap(GL11.GL_TEXTURE_2D);
     }
 
     private static void compile() {

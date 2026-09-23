@@ -2,7 +2,6 @@ package coldplay.gui.hud;
 
 import coldplay.ColdPlay;
 import coldplay.gui.Theme;
-import coldplay.gui.click.ClickGuiScreen;
 import coldplay.hud.HudState;
 import coldplay.module.Module;
 import coldplay.module.visual.Mirror;
@@ -229,7 +228,7 @@ public class HudEditScreen extends GuiScreen {
     protected void keyTyped(char typedChar, int keyCode) {
         if (keyCode == Keyboard.KEY_ESCAPE
                 || keyCode == ColdPlay.getInstance().getConfigManager().getGuiOpenKey()) {
-            this.mc.displayGuiScreen(new ClickGuiScreen());
+            this.mc.displayGuiScreen(ColdPlay.getInstance().getConfigManager().getGuiStyle().createScreen());
         }
     }
 
