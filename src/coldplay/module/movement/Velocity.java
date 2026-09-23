@@ -101,7 +101,8 @@ public class Velocity extends Module {
         pendingHit = true;
     }
 
-    @EventTarget
+    // after Sprint, WTap and Scaffold set this tick's sprint, not in whatever order they were enabled
+    @EventTarget(priority = EventPriority.NORMAL - 1)
     public void onStrafe(EventStrafe event) {
         EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
         boolean freshHit = legit() ? pendingHit : released;
