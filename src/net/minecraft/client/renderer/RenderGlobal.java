@@ -1225,6 +1225,9 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
 			}
 		}
 		if (this.mc.theWorld.provider.getDimensionId() == 1) this.renderSkyEnd();
+		// ColdPlay >>> Ambience galaxy sky
+		else if (coldplay.util.GalaxySky.active() && this.mc.theWorld.provider.isSurfaceWorld()) coldplay.util.GalaxySky.render(partialTicks);
+		// ColdPlay <<<
 		else if (this.mc.theWorld.provider.isSurfaceWorld()) {
 			GlStateManager.disableTexture2D();
 			final boolean flag = Config.isShaders();

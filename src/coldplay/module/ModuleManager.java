@@ -66,9 +66,11 @@ public class ModuleManager {
         register(new coldplay.module.combat.FakeLag());
         register(new coldplay.module.movement.Sprint());
         register(new coldplay.module.movement.BridgeAssist());
-        register(new coldplay.module.movement.Scaffold());
+        coldplay.module.movement.Scaffold scaffold = new coldplay.module.movement.Scaffold();
+        register(scaffold);
         register(new coldplay.module.movement.NoFall());
         register(new coldplay.module.movement.AutoPearl());
+        register(new coldplay.module.movement.Clutch(scaffold::isEnabled));
         register(new coldplay.module.movement.InvMove());
         register(new coldplay.module.movement.Velocity());
         register(new coldplay.module.visual.BlockAnimation());
@@ -88,6 +90,7 @@ public class ModuleManager {
         register(new coldplay.module.visual.ArmorStatus(hudState));
         register(new coldplay.module.visual.Mirror(hudState));
         register(new coldplay.module.visual.Trajectory());
+        register(new coldplay.module.visual.Ambience());
         register(new coldplay.module.utility.ChestStealer());
         register(new coldplay.module.utility.AutoTool());
         register(new coldplay.module.utility.FastPlace());
