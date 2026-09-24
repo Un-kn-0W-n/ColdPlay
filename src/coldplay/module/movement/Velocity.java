@@ -1,5 +1,7 @@
 package coldplay.module.movement;
 
+import coldplay.broker.CombatManager;
+import coldplay.broker.SprintGuard;
 import coldplay.event.EventHurt;
 import coldplay.event.EventPriority;
 import coldplay.event.EventStrafe;
@@ -25,7 +27,7 @@ public class Velocity extends Module {
     private static final int MAX_HOLD_TICKS = 6; // 300ms
     private static Velocity instance;
     public final ModeSetting mode = add(new ModeSetting("Mode", LEGIT, LEGIT, HYPIXEL)
-            .describe("Legit auto-jumps on knockback. Hypixel holds melee knockback until you land, then jump-resets."));
+            .describe("Legit auto-jumps on knockback. Hypixel holds melee knockback until you land on a KillAura hit, then jump-resets."));
     public final NumberSetting chance = add(new NumberSetting("Chance", 100.0, 10.0, 100.0, 1.0)
             .describe("% chance to auto-jump on each knockback you take."));
 
@@ -75,9 +77,16 @@ public class Velocity extends Module {
     @EventTarget(priority = EventPriority.STATE_TRACKING + 1)
     public void onUpdate(EventUpdate event) {
         EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-        if (event.isPre() && !held.isEmpty()
-                && (player == null || player.onGround || ++heldTicks >= MAX_HOLD_TICKS)) {
+        if (!event.isPre() || held.isEmpty()) {
+            return;
+        }
+        // KillAura's sprint hit later this tick takes the vanilla x0.6 off the knockback before the jump reset
+        boolean hitDue = System.currentTimeMillis() >= CombatManager.getInstance().getNextAttackAt();
+        if (player == null || player.onGround && hitDue || ++heldTicks >= MAX_HOLD_TICKS) {
             release(player != null);
+            if (released && player.onGround) {
+                SprintGuard.getInstance().keep();
+            }
         }
     }
 
@@ -101,13 +110,18 @@ public class Velocity extends Module {
         pendingHit = true;
     }
 
-    // after Sprint, WTap and Scaffold set this tick's sprint, not in whatever order they were enabled
-    @EventTarget(priority = EventPriority.NORMAL - 1)
+    // after Sprint, WTap and Scaffold set this tick's sprint and after Criticals hops, not in enable order
+    @EventTarget(priority = EventPriority.DRAIN - 2)
     public void onStrafe(EventStrafe event) {
         EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
         boolean freshHit = legit() ? pendingHit : released;
         pendingHit = false;
         released = false;
+        if (player != null && player.onGround && !held.isEmpty()) {
+            // waiting on the ground for the hit, a jump now would leave no ground to jump-reset from
+            player.movementInput.jump = false;
+            return;
+        }
         // Knockback leaves motionY ~+0.4; fall damage fires EventHurt too, but with motionY already zeroed.
         if (player == null || !freshHit || !player.onGround || player.motionY <= 0.0) {
             return;

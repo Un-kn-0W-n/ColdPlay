@@ -1189,7 +1189,9 @@ public class EntityRenderer implements IResourceManagerReloadListener {
 		} else GlStateManager.disableBlend();
 		this.setupFog(0, partialTicks);
 		GlStateManager.shadeModel(7425);
-		if (entity.posY + entity.getEyeHeight() < 128.0D + this.mc.gameSettings.ofCloudsHeight * 128.0F) this.renderCloudsCheck(renderglobal, partialTicks, pass);
+		// ColdPlay >>> Ambience hides clouds
+		if (!coldplay.util.GalaxySky.active() && entity.posY + entity.getEyeHeight() < 128.0D + this.mc.gameSettings.ofCloudsHeight * 128.0F) this.renderCloudsCheck(renderglobal, partialTicks, pass);
+		// ColdPlay <<<
 		this.mc.mcProfiler.endStartSection("prepareterrain");
 		this.setupFog(0, partialTicks);
 		this.mc.getTextureManager().bindTexture(TextureMap.locationBlocksTexture);

@@ -24,6 +24,7 @@ public final class GlassShader {
     private static final int FLAT = 0;
     private static final int BLUR = 1;
     private static final int IMAGE = 2;
+    private static final int ARC = 3;
 
     private static final String VERTEX_SRC = "#version 120\n"
             + "uniform vec2 origin;\n"
@@ -50,11 +51,27 @@ public final class GlassShader {
             + "uniform float blurStep;\n"
             + "uniform float lod;\n"
             + "uniform float saturation;\n"
+            + "uniform vec3 arc;\n"
             + "uniform sampler2D image;\n"
             + "varying vec2 local;\n"
             + "float box(vec2 p) {\n"
             + "    vec2 q = abs(p - size * 0.5) - size * 0.5 + radius;\n"
             + "    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;\n"
+            + "}\n"
+            // distance along the outline, clockwise from the top center; e is the straight half length of each side
+            + "float along(vec2 p, vec2 e, float r) {\n"
+            + "    float q = 1.5707963 * r;\n"
+            + "    if (abs(p.x) > e.x && abs(p.y) > e.y) {\n"
+            + "        if (p.x > 0.0 && p.y < 0.0) return e.x + r * atan(p.x - e.x, -p.y - e.y);\n"
+            + "        if (p.x > 0.0) return e.x + q + 2.0 * e.y + r * atan(p.y - e.y, p.x - e.x);\n"
+            + "        if (p.y > 0.0) return 3.0 * e.x + 2.0 * q + 2.0 * e.y + r * atan(-p.x - e.x, p.y - e.y);\n"
+            + "        return 3.0 * e.x + 3.0 * q + 4.0 * e.y + r * atan(-p.y - e.y, -p.x - e.x);\n"
+            + "    }\n"
+            + "    if (abs(p.x) > e.x) {\n"
+            + "        return p.x > 0.0 ? e.x + q + e.y + p.y : 3.0 * e.x + 3.0 * q + 3.0 * e.y - p.y;\n"
+            + "    }\n"
+            + "    if (p.y > 0.0) return 2.0 * e.x + 2.0 * q + 2.0 * e.y - p.x;\n"
+            + "    return p.x >= 0.0 ? p.x : 4.0 * (e.x + q + e.y) + p.x;\n"
             + "}\n"
             + "vec3 backdrop() {\n"
             + "    vec3 sum = vec3(0.0);\n"
@@ -74,6 +91,16 @@ public final class GlassShader {
             + "void main() {\n"
             + "    float d = box(local);\n"
             + "    float aa = fwidth(d);\n"
+            + "    if (mode == 3) {\n"
+            + "        vec2 e = size * 0.5 - radius;\n"
+            + "        float len = 4.0 * (e.x + e.y + 1.5707963 * radius);\n"
+            + "        float s = along(local - size * 0.5, e, radius) / len;\n"
+            // past either end, measure to the end point so the caps come out round
+            + "        float gap = s < arc.y || s > arc.z ? min(mod(arc.y - s, 1.0), mod(s - arc.z, 1.0)) * len : 0.0;\n"
+            + "        float line = clamp(0.5 - (length(vec2(gap, d)) - arc.x) / aa, 0.0, 1.0);\n"
+            + "        gl_FragColor = vec4(color0.rgb, color0.a * line);\n"
+            + "        return;\n"
+            + "    }\n"
             + "    float cover = clamp(0.5 - d / aa, 0.0, 1.0);\n"
             + "    float inner = clamp(0.5 - (d + aa) / aa, 0.0, 1.0);\n"
             + "    vec2 t = local / size;\n"
@@ -145,6 +172,18 @@ public final class GlassShader {
     public static void stroke(float x, float y, float w, float h, float r, int color) {
         if (w > 0.0F && use()) {
             draw(x, y, w, h, r, color & 0x00FFFFFF, color & 0x00FFFFFF, false, color, 0.0F, 0.0F, 0.0F, 0.0F, FLAT);
+        }
+    }
+
+    /**
+     * A {@code width} line centered on the rounded outline, covering {@code from} to {@code to}
+     * of the way round clockwise from the top center, with round ends.
+     */
+    public static void arc(float x, float y, float w, float h, float r, float width, float from, float to, int color) {
+        if (to > from && use()) {
+            GL20.glUniform3f(uniform("arc"), width / 2.0F, from, to);
+            // shadow is unused in this mode, it only pads the quad for the line's outer half
+            draw(x, y, w, h, r, color, color, false, 0, 0.0F, width, 0.0F, 0.0F, ARC);
         }
     }
 

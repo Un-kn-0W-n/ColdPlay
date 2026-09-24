@@ -1,5 +1,6 @@
 package coldplay.module.combat;
 
+import coldplay.broker.SprintGuard;
 import coldplay.event.EventAttackPerformed;
 import coldplay.event.EventStrafe;
 import coldplay.event.EventTarget;
@@ -41,7 +42,7 @@ public class WTap extends Module {
             return;
         }
         EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-        if (player == null || !event.wasSprinting()) {
+        if (player == null || !event.wasSprinting() || SprintGuard.getInstance().isKept()) {
             return;
         }
         if (Math.random() * 100.0 >= chance.get()) {

@@ -161,6 +161,7 @@ public class KillAura extends Module {
         target = null;
         resetAim();
         RotationManager.getInstance().cancel(this);
+        CombatManager.getInstance().setNextAttackAt(0L);
     }
 
     public boolean isWorking() {
@@ -195,6 +196,9 @@ public class KillAura extends Module {
         if (target != null) {
             attemptAttack(mc, player, now);
         }
+        // Velocity lands held knockback on this click
+        CombatManager.getInstance().setNextAttackAt(target == null ? 0L
+                : humanize.get() ? Math.max(nextClickAt, reactionAt) : nextClickAt);
     }
 
     private void selectTarget(EntityPlayerSP player, long now) {

@@ -35,29 +35,32 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.ColorMath;
 import net.minecraft.util.MathHelper;
 
-import java.awt.Color;
-
 /** Shows the entity last attacked, else the one under the crosshair, and holds it for Hold Time after it is lost. */
 public class TargetHUD extends Module {
     private final HudState hud;
 
     private static final float PAD = 7.5F;
+    private static final float PAD_RIGHT = 9.0F;
     private static final int HEAD = 30;
     private static final float HEAD_GAP = 7.5F;
-    private static final float BAR_H = 3.0F;
-    private static final float BAR_GAP = 6.0F; // between the text row and the bar
-    private static final int MIN_COL_W = 121;  // keeps the card at least 174 wide
+    private static final int MIN_COL_W = 120;  // keeps the card at least 174 wide
     private static final int TEXT_PAD = 8;     // min gap between the name and the health number
     private static final float RADIUS = 7.5F;
     private static final float HEAD_RADIUS = 4.5F;
+    private static final float RING_GAP = 2.25F; // between the card and the health ring
+    private static final float RING_W = 1.5F;
 
     private static final int WELL = 0x40000000;
-    private static final int TRACK = 0x24FFFFFF;
-    private static final int TRAIL = 0x59FFFFFF;
+    private static final int TRACK = 0x29FFFFFF;
+    private static final int TRAIL = 0x8CFFFFFF;
     private static final int TEXT = 0xFFFFFFFF;
     private static final int HURT = 0xFFFF5A5A;
+    private static final int GREEN = 0xFF7EE08E;
+    private static final int YELLOW = 0xFFEFD25A;
+    private static final int ORANGE = 0xFFF59A4C;
+    private static final int RED = 0xFFF0505A;
     private static final FontRef NAME_FONT = new FontRef(Fonts.GEIST_SEMIBOLD, 9.75F);
-    private static final FontRef HP_FONT = new FontRef(Fonts.GEIST_MONO, 9.0F);
+    private static final FontRef HP_FONT = new FontRef(Fonts.GEIST_MONO_MEDIUM, 9.75F);
 
     private final BooleanSetting healthText = add(new BooleanSetting("Health Text", true).describe("Numeric health next to the name."));
 
@@ -76,7 +79,7 @@ public class TargetHUD extends Module {
     private EntityLivingBase combatTarget;
     private long combatTargetAt;
 
-    // the trail lags behind the bar to show the damage just taken
+    // the trail lags behind the ring to show the damage just taken
     private final Animation bar = new Animation(1.0, 14.0);
     private final Animation trail = new Animation(1.0, 3.0);
     private EntityLivingBase animated;
@@ -181,7 +184,7 @@ public class TargetHUD extends Module {
         // Unscaled units; Scale is a matrix pinned at the top-center anchor.
         int textW = font.getStringWidth(name) + (hp != null ? TEXT_PAD + hpFont.getStringWidth(hp) : 0);
         int colW = Math.max(MIN_COL_W, textW);
-        int panelW = Math.round(PAD + HEAD + HEAD_GAP + colW + PAD);
+        int panelW = Math.round(PAD + HEAD + HEAD_GAP + colW + PAD_RIGHT);
         int panelH = Math.round(PAD + HEAD + PAD);
 
         ScaledResolution resolution = event.getResolution();
@@ -203,21 +206,24 @@ public class TargetHUD extends Module {
 
         GlassShader.panel(left, top, panelW, panelH, RADIUS, Glass.SMOKE_PANEL);
 
+        // the ring around the card is the health bar, drained from the top center going round
+        int color = healthColor(barFraction);
+        float o = RING_GAP + RING_W / 2.0F;
+        float ringW = panelW + 2.0F * o;
+        float ringH = panelH + 2.0F * o;
+        GlassShader.arc(left - o, top - o, ringW, ringH, RADIUS + o, RING_W, 0.0F, 1.0F, TRACK);
+        GlassShader.arc(left - o, top - o, ringW, ringH, RADIUS + o, RING_W, barFraction, trailFraction, TRAIL);
+        GlassShader.arc(left - o, top - o, ringW, ringH, RADIUS + o, RING_W, 0.0F, barFraction, color);
+
         float headX = left + PAD;
         float headY = top + PAD;
         float colX = headX + HEAD + HEAD_GAP;
-        float textY = headY + (HEAD - font.getHeight() - BAR_GAP - BAR_H) / 2.0F;
-        int color = Color.HSBtoRGB(fraction / 3.0F, 0.39F, 0.89F); // soft red to soft green
+        float textY = headY + (HEAD - font.getHeight()) / 2.0F;
         font.drawString(name, colX, textY, friendColor != 0 ? friendColor : TEXT);
         if (hp != null) {
             hpFont.drawString(hp, colX + colW - hpFont.getStringWidth(hp),
                     textY + font.getAscent() - hpFont.getAscent(), color);
         }
-
-        float barY = textY + font.getHeight() + BAR_GAP;
-        GlassShader.rect(colX, barY, colW, BAR_H, BAR_H / 2.0F, TRACK, TRACK);
-        GlassShader.rect(colX, barY, colW * trailFraction, BAR_H, BAR_H / 2.0F, TRAIL, TRAIL);
-        GlassShader.rect(colX, barY, colW * barFraction, BAR_H, BAR_H / 2.0F, color, color);
 
         if (shown instanceof AbstractClientPlayer) {
             int tint = ColorMath.lerpArgb(0xFFFFFFFF, HURT, shown.hurtTime / 10.0F);
@@ -242,6 +248,17 @@ public class TargetHUD extends Module {
         GlStateManager.popMatrix();
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
         GlStateManager.enableBlend();
+    }
+
+    /** Green at full health, through yellow and orange, to red. */
+    private static int healthColor(float fraction) {
+        if (fraction > 0.55F) {
+            return ColorMath.lerpArgb(YELLOW, GREEN, (fraction - 0.55F) / 0.45F);
+        }
+        if (fraction > 0.3F) {
+            return ColorMath.lerpArgb(ORANGE, YELLOW, (fraction - 0.3F) / 0.25F);
+        }
+        return ColorMath.lerpArgb(RED, ORANGE, fraction / 0.3F);
     }
 
     /** Last attacked entity first, then whatever the crosshair points at. */
