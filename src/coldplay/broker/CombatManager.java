@@ -39,6 +39,16 @@ public final class CombatManager {
         this.reachBonus = reachBonus;
     }
 
+    private long nextAttackAt; // ms, 0 when KillAura has no target
+
+    public long getNextAttackAt() {
+        return nextAttackAt;
+    }
+
+    public void setNextAttackAt(long nextAttackAt) {
+        this.nextAttackAt = nextAttackAt;
+    }
+
     public static final class Filters {
         public final boolean players, mobs, animals, invisible, npcs, excludeFriends;
         public final double range, fov;

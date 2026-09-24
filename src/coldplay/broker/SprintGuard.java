@@ -5,7 +5,7 @@ public final class SprintGuard {
 
     private static final SprintGuard INSTANCE = new SprintGuard();
 
-    private boolean suppressed;
+    private boolean suppressed, kept;
 
     private SprintGuard() {
     }
@@ -18,9 +18,19 @@ public final class SprintGuard {
         suppressed = true;
     }
 
+    // a jump reset this tick needs the sprint boost, so sprint resets wait for the next hit
+    public void keep() {
+        kept = true;
+    }
+
+    public boolean isKept() {
+        return kept;
+    }
+
     public boolean consumeSuppression() {
         boolean s = suppressed;
         suppressed = false;
+        kept = false;
         return s;
     }
 }

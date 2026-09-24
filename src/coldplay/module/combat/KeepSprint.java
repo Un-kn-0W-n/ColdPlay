@@ -29,7 +29,7 @@ public class KeepSprint extends Module {
     @EventTarget
     public void onAttack(EventAttackPerformed event) {
         EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-        if (player == null || !event.wasSprinting() || player.isSprinting()) {
+        if (player == null || !event.wasSprinting() || player.isSprinting() || SprintGuard.getInstance().isKept()) {
             return;
         }
         if (!(event.getTarget() instanceof EntityPlayer)) {
