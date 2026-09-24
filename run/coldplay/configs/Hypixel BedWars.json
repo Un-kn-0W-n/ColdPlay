@@ -102,10 +102,10 @@
       }
     },
     "Criticals": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
-        "Mode": "Hypixel"
+        "Mode": "Legit"
       }
     },
     "AutoThrow": {
@@ -239,7 +239,7 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Mode": "Legit",
+        "Mode": "Hypixel",
         "Chance": 75.0
       }
     },
@@ -382,9 +382,7 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Show Model": true,
         "Health Text": true,
-        "Held + Armor": true,
         "Players": true,
         "Mobs": true,
         "Animals": false,
@@ -635,6 +633,14 @@
       "enabled": false,
       "keyBind": 0,
       "settings": {}
+    },
+    "ACLearner": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Probe": "Offset",
+        "Distance": 10.0
+      }
     }
   }
 }
