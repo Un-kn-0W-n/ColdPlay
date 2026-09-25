@@ -264,7 +264,10 @@ public class RenderItem implements IResourceManagerReloadListener {
 					if (i >= 18) modelresourcelocation = new ModelResourceLocation("bow_pulling_2", "inventory");
 					else if (i > 13) modelresourcelocation = new ModelResourceLocation("bow_pulling_1", "inventory");
 					else if (i > 0) modelresourcelocation = new ModelResourceLocation("bow_pulling_0", "inventory");
-				} else if (item instanceof ItemSword && entityplayer.getItemInUse() != null && entityplayer.getItemInUse().getItemUseAction() == EnumAction.BLOCK && entityplayer.getItemInUseCount() != 0 && oldAnimations) {
+				// ColdPlay >>> no undo for Push in first person
+				} else if (item instanceof ItemSword && entityplayer.getItemInUse() != null && entityplayer.getItemInUse().getItemUseAction() == EnumAction.BLOCK && entityplayer.getItemInUseCount() != 0 && oldAnimations
+						&& !(cameraTransformType == ItemCameraTransforms.TransformType.FIRST_PERSON && coldplay.util.BlockPose.push())) {
+				// ColdPlay <<<
 					if (entityplayer.isSneaking()) GL11.glTranslatef(-0.05F, 0.05F, 0.05F);
 					else GL11.glTranslatef(-0.05F, 0.05F, -0.1F);
 					GL11.glRotatef(-50.0F, 0.0F, 1.0F, 0.0F);
