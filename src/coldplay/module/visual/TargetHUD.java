@@ -8,6 +8,7 @@ import coldplay.event.EventTarget;
 import coldplay.event.EventUpdate;
 import coldplay.gui.Glass;
 import coldplay.gui.GlassShader;
+import coldplay.gui.Theme;
 import coldplay.hud.HudState;
 import coldplay.module.Category;
 import coldplay.module.Module;
@@ -55,10 +56,6 @@ public class TargetHUD extends Module {
     private static final int TRAIL = 0x8CFFFFFF;
     private static final int TEXT = 0xFFFFFFFF;
     private static final int HURT = 0xFFFF5A5A;
-    private static final int GREEN = 0xFF7EE08E;
-    private static final int YELLOW = 0xFFEFD25A;
-    private static final int ORANGE = 0xFFF59A4C;
-    private static final int RED = 0xFFF0505A;
     private static final FontRef NAME_FONT = new FontRef(Fonts.GEIST_SEMIBOLD, 9.75F);
     private static final FontRef HP_FONT = new FontRef(Fonts.GEIST_MONO_MEDIUM, 9.75F);
 
@@ -207,7 +204,7 @@ public class TargetHUD extends Module {
         GlassShader.panel(left, top, panelW, panelH, RADIUS, Glass.SMOKE_PANEL);
 
         // the ring around the card is the health bar, drained from the top center going round
-        int color = healthColor(barFraction);
+        int color = Theme.healthColor(barFraction);
         float o = RING_GAP + RING_W / 2.0F;
         float ringW = panelW + 2.0F * o;
         float ringH = panelH + 2.0F * o;
@@ -248,17 +245,6 @@ public class TargetHUD extends Module {
         GlStateManager.popMatrix();
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
         GlStateManager.enableBlend();
-    }
-
-    /** Green at full health, through yellow and orange, to red. */
-    private static int healthColor(float fraction) {
-        if (fraction > 0.55F) {
-            return ColorMath.lerpArgb(YELLOW, GREEN, (fraction - 0.55F) / 0.45F);
-        }
-        if (fraction > 0.3F) {
-            return ColorMath.lerpArgb(ORANGE, YELLOW, (fraction - 0.3F) / 0.25F);
-        }
-        return ColorMath.lerpArgb(RED, ORANGE, fraction / 0.3F);
     }
 
     /** Last attacked entity first, then whatever the crosshair points at. */

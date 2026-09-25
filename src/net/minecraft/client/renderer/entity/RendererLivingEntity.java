@@ -74,6 +74,13 @@ public abstract class RendererLivingEntity<T extends EntityLivingBase> extends R
         return this.mainModel;
     }
 
+    // ColdPlay >>> the per-mob model scale, for ESP Skeleton
+    public void coldplayPreRender(T entity, float partialTicks)
+    {
+        this.preRenderCallback(entity, partialTicks);
+    }
+    // ColdPlay <<<
+
     /**
      * Returns a rotation angle that is inbetween two other rotation angles. par1 and par2 are the angles between which
      * to interpolate, par3 is probably a float between 0.0 and 1.0 that tells us where "between" the two angles we are.

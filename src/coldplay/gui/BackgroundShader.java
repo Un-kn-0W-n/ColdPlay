@@ -27,8 +27,6 @@ public final class BackgroundShader {
 
     private static final Logger logger = LogManager.getLogger();
 
-    public static final int ABYSS = 0xFF07101D;
-
     public static final int ICE = 0xFFE8F0F8;
 
     public static final int MIST = 0xFF8294A8;
@@ -68,7 +66,7 @@ public final class BackgroundShader {
             + "    float ridge = 1.0 - abs(current * 2.0 - 1.0);\n"
             + "    ridge = pow(clamp(ridge, 0.0, 1.0), 7.0);\n"
             + "    float deepFlow = fbm(p * 0.72 - vec2(t * 0.12, t * 0.06));\n"
-            + "    float sweep = exp(-10.0 * pow(p.x + p.y * 0.34 - sin(t * 0.35) * 0.28, 2.0));\n"
+            + "    float sweep = exp(-10.0 * pow(p.x + p.y * 0.34 - sin(time * 0.224) * 0.6, 2.0));\n"
             + "    float veil = smoothstep(0.30, 0.76, current);\n"
             + "    vec3 abyss = vec3(0.010, 0.022, 0.044);\n"
             + "    vec3 navy = vec3(0.022, 0.085, 0.150);\n"
@@ -126,17 +124,6 @@ public final class BackgroundShader {
         OpenGlHelper.glUseProgram(0);
     }
 
-    public static void drawListPanel(int left, int top, int right, int bottom) {
-        Gui.drawRect(left, top, right, bottom, 0x85101014);
-        Gui.drawRect(left, top, right, top + 1, Theme.SEP);
-        Gui.drawRect(left, bottom - 1, right, bottom, Theme.SEP);
-    }
-
-    public static void drawListMask(int left, int right, int startY, int endY, int alpha) {
-        int a = MathHelper.clamp_int(alpha, 0, 232);
-        Gui.drawRect(left, startY, right, endY, Theme.withAlpha(ABYSS, a));
-    }
-
     public static void drawWordmark(float centerX, float centerY) {
         drawWordmark(centerX, centerY, 1.0F);
     }
@@ -164,16 +151,6 @@ public final class BackgroundShader {
         Gui.drawRect(railStart, railY, railEnd, railY + 2, Theme.FROST);
         Gui.drawRect(railEnd - 2, railY - 3, railEnd, railY + 2, ICE);
         GlStateManager.popMatrix();
-    }
-
-    public static void drawSectionTitle(String title, float centerX, float y) {
-        if (!Fonts.isLoaded() || Fonts.title == null) {
-            return;
-        }
-        final String label = title.toUpperCase(java.util.Locale.ROOT);
-        Fonts.title.drawCenteredWithShadow(label, centerX, y, ICE);
-        final int railY = Math.round(y + Fonts.title.getHeight() + 3.0F);
-        Gui.drawRect(Math.round(centerX - 18.0F), railY, Math.round(centerX + 18.0F), railY + 1, Theme.FROST);
     }
 
     private static float trackedWidth(CustomFont font, String text, float tracking) {

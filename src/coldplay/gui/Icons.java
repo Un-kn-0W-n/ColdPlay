@@ -24,7 +24,10 @@ public final class Icons {
 
     public enum Icon {
         CHECK, CLOSE, CHEVRON_LEFT, CHEVRON_RIGHT, CHEVRON_DOWN, GEAR, SEARCH,
-        SWORD, MOVE, WRENCH, EYE, SNOWFLAKE, SLIDERS, LAYOUT
+        SWORD, MOVE, WRENCH, EYE, SNOWFLAKE, SLIDERS, LAYOUT,
+        USER, USERS, SERVERS, GLOBE, DOCUMENT, POWER,
+        CHEVRON_UP, PENCIL, REFRESH, TRASH, PLUS, PLAY, LINK, WIFI, KEY, LOGIN, LOCK,
+        MONITOR, KEYBOARD, SPEAKER, LAYERS, SHIRT, CHAT, PULSE, SPARKLE, CUBE, STAR, HEART
     }
 
     private static final Map<String, DynamicTexture> baked = new HashMap<String, DynamicTexture>();
@@ -138,6 +141,149 @@ public final class Icons {
                 g.draw(new Line2D.Double(7, 13, 10, 13));
                 g.draw(new Line2D.Double(15, 13, 17, 13));
                 break;
+            case USER:
+                g.draw(new Ellipse2D.Double(8, 4, 8, 8));
+                g.draw(curve(4, 21, 5.5, 17, 8.5, 15, 12, 15, 15.5, 15, 18.5, 17, 20, 21));
+                break;
+            case USERS:
+                g.draw(new Ellipse2D.Double(5.5, 4.5, 7, 7));
+                g.draw(curve(2.5, 20, 3.5, 16.5, 6, 14.5, 9, 14.5, 12, 14.5, 14.5, 16.5, 15.5, 20));
+                g.draw(new Arc2D.Double(12.5, 4.5, 7, 7, 90, -180, Arc2D.OPEN));
+                g.draw(curve(18, 14.8, 19.7, 15.5, 20.9, 17.2, 21.5, 20));
+                break;
+            case SERVERS:
+                g.draw(new RoundRectangle2D.Double(3, 4, 18, 7, 4, 4));
+                g.draw(new RoundRectangle2D.Double(3, 13, 18, 7, 4, 4));
+                g.draw(new Line2D.Double(7, 7.5, 7.01, 7.5));
+                g.draw(new Line2D.Double(7, 16.5, 7.01, 16.5));
+                break;
+            case GLOBE:
+                g.draw(new Ellipse2D.Double(3, 3, 18, 18));
+                g.draw(new Ellipse2D.Double(8.2, 3, 7.6, 18));
+                g.draw(new Line2D.Double(3, 12, 21, 12));
+                break;
+            case DOCUMENT:
+                Path2D page = poly(6, 3, 15, 3, 19, 7, 19, 21, 6, 21);
+                page.closePath();
+                g.draw(page);
+                g.draw(new Line2D.Double(9, 7, 13, 7));
+                g.draw(new Line2D.Double(9, 11, 16, 11));
+                g.draw(new Line2D.Double(9, 15, 16, 15));
+                break;
+            case POWER:
+                g.draw(new Line2D.Double(12, 3, 12, 11));
+                g.draw(new Arc2D.Double(4, 4.41, 16, 16, 135.5, 269, Arc2D.OPEN));
+                break;
+            case CHEVRON_UP:
+                g.draw(poly(5, 15, 12, 8, 19, 15));
+                break;
+            case PENCIL:
+                g.draw(closed(4, 20, 8, 20, 19, 9, 15, 5, 4, 16));
+                g.draw(new Line2D.Double(13.5, 6.5, 17.5, 10.5));
+                break;
+            case REFRESH:
+                g.draw(new Arc2D.Double(4, 4, 16, 16, 0, -315, Arc2D.OPEN));
+                g.draw(poly(20, 4, 20, 9, 15, 9));
+                break;
+            case TRASH:
+                g.draw(new Line2D.Double(4, 7, 20, 7));
+                g.draw(new Line2D.Double(10, 11, 10, 17));
+                g.draw(new Line2D.Double(14, 11, 14, 17));
+                g.draw(poly(6, 7, 7, 20, 17, 20, 18, 7));
+                g.draw(poly(9, 7, 9, 4, 15, 4, 15, 7));
+                break;
+            case PLUS:
+                g.draw(new Line2D.Double(12, 5, 12, 19));
+                g.draw(new Line2D.Double(5, 12, 19, 12));
+                break;
+            case PLAY:
+                g.draw(closed(7, 4.5, 7, 19.5, 19, 12));
+                break;
+            case LINK:
+                g.rotate(-Math.PI / 4, 12, 12);
+                g.draw(new RoundRectangle2D.Double(3, 8.5, 10, 7, 7, 7));
+                g.draw(new RoundRectangle2D.Double(11, 8.5, 10, 7, 7, 7));
+                break;
+            case WIFI:
+                g.draw(new Arc2D.Double(-3, 5.18, 30, 30, 131.8, -83.6, Arc2D.OPEN));
+                g.draw(new Arc2D.Double(2, 9.64, 20, 20, 134.4, -88.8, Arc2D.OPEN));
+                g.draw(new Arc2D.Double(7, 14.57, 10, 10, 134.4, -88.8, Arc2D.OPEN));
+                g.draw(new Line2D.Double(12, 19.5, 12.01, 19.5));
+                break;
+            case KEY:
+                g.draw(new Ellipse2D.Double(4, 11, 8, 8));
+                g.draw(new Line2D.Double(11, 12, 20, 3));
+                g.draw(new Line2D.Double(17, 6, 20, 9));
+                g.draw(new Line2D.Double(15, 8, 17, 10));
+                break;
+            case LOGIN:
+                Path2D door = new Path2D.Double();
+                door.moveTo(14, 4);
+                door.lineTo(18, 4);
+                door.quadTo(20, 4, 20, 6);
+                door.lineTo(20, 18);
+                door.quadTo(20, 20, 18, 20);
+                door.lineTo(14, 20);
+                g.draw(door);
+                g.draw(poly(10, 16, 14, 12, 10, 8));
+                g.draw(new Line2D.Double(14, 12, 4, 12));
+                break;
+            case LOCK:
+                g.draw(new RoundRectangle2D.Double(5, 11, 14, 9, 4, 4));
+                g.draw(new Arc2D.Double(8, 4, 8, 8, 180, -180, Arc2D.OPEN));
+                g.draw(new Line2D.Double(8, 8, 8, 11));
+                g.draw(new Line2D.Double(16, 8, 16, 11));
+                break;
+            case MONITOR:
+                g.draw(new RoundRectangle2D.Double(3, 4, 18, 12, 4, 4));
+                g.draw(new Line2D.Double(8, 20, 16, 20));
+                g.draw(new Line2D.Double(12, 16, 12, 20));
+                break;
+            case KEYBOARD:
+                g.draw(new RoundRectangle2D.Double(2, 6, 20, 12, 4, 4));
+                for (int k = 6; k <= 18; k += 4) {
+                    g.draw(new Line2D.Double(k, 10, k + 0.01, 10));
+                }
+                g.draw(new Line2D.Double(7, 14, 17, 14));
+                break;
+            case SPEAKER:
+                g.draw(closed(4, 9, 4, 15, 8, 15, 13, 19, 13, 5, 8, 9));
+                g.draw(new Arc2D.Double(7.93, 7, 10, 10, 44.4, -88.8, Arc2D.OPEN));
+                g.draw(new Arc2D.Double(4.48, 3.5, 17, 17, 44.9, -89.8, Arc2D.OPEN));
+                break;
+            case LAYERS:
+                g.draw(closed(12, 3, 21, 8, 12, 13, 3, 8));
+                g.draw(poly(3, 13, 12, 18, 21, 13));
+                break;
+            case SHIRT:
+                g.draw(poly(16, 3, 21, 6, 19, 10, 16, 9, 16, 21, 8, 21, 8, 9, 5, 10, 3, 6, 8, 3));
+                g.draw(new Arc2D.Double(8, -1, 8, 8, 180, 180, Arc2D.OPEN));
+                break;
+            case CHAT:
+                g.draw(closed(4, 5, 20, 5, 20, 16, 9, 16, 4, 20));
+                break;
+            case PULSE:
+                g.draw(poly(3, 12, 7, 12, 10, 5, 14, 19, 17, 12, 21, 12));
+                break;
+            case SPARKLE:
+                g.draw(closed(12, 4, 13.8, 8.2, 18, 10, 13.8, 11.8, 12, 16, 10.2, 11.8, 6, 10, 10.2, 8.2));
+                g.draw(closed(19, 15, 19.8, 16.9, 21.7, 17.7, 19.8, 18.5, 19, 20.4, 18.2, 18.5, 16.3, 17.7, 18.2, 16.9));
+                break;
+            case CUBE:
+                g.draw(closed(12, 3, 20, 7.5, 20, 16.5, 12, 21, 4, 16.5, 4, 7.5));
+                g.draw(poly(4, 7.5, 12, 12, 20, 7.5));
+                g.draw(new Line2D.Double(12, 12, 12, 21));
+                break;
+            case STAR:
+                g.draw(closed(12, 3, 14.6, 8.6, 20.7, 9.3, 16.2, 13.5, 17.4, 19.5, 12, 16.5, 6.6, 19.5, 7.8, 13.5,
+                        3.3, 9.3, 9.4, 8.6));
+                break;
+            case HEART:
+                Path2D heart = curve(12, 20, 12, 20, 5, 15.6, 5, 10, 5, 6.5, 10.5, 5, 12, 7.4,
+                        13.5, 5, 19, 6.5, 19, 10, 19, 15.6, 12, 20, 12, 20);
+                heart.closePath();
+                g.draw(heart);
+                break;
             default:
                 break;
         }
@@ -150,6 +296,22 @@ public final class Icons {
         path.moveTo(xy[0], xy[1]);
         for (int i = 2; i < xy.length; i += 2) {
             path.lineTo(xy[i], xy[i + 1]);
+        }
+        return path;
+    }
+
+    private static Path2D closed(double... xy) {
+        Path2D path = poly(xy);
+        path.closePath();
+        return path;
+    }
+
+    /** A start point followed by cubic segments, three points each. */
+    private static Path2D curve(double... xy) {
+        Path2D path = new Path2D.Double();
+        path.moveTo(xy[0], xy[1]);
+        for (int i = 2; i < xy.length; i += 6) {
+            path.curveTo(xy[i], xy[i + 1], xy[i + 2], xy[i + 3], xy[i + 4], xy[i + 5]);
         }
         return path;
     }

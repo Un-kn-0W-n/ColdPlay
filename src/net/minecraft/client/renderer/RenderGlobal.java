@@ -19,6 +19,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.lwjglx.input.Keyboard;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL30;
 import org.lwjglx.util.vector.Vector3f;
 import org.lwjglx.util.vector.Vector4f;
 
@@ -155,7 +156,7 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
 	private static final class OutlinePass {
 		Framebuffer framebuffer;
 		ShaderGroup shader;
-		boolean chams, rendered, initialized;
+		boolean chams, glow, rendered, initialized;
 	}
 
 	private final OutlinePass mainOutlines = new OutlinePass();
@@ -269,10 +270,11 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
 		outlines().framebuffer = null;
 		outlines().rendered = false;
 		outlines().chams = coldplay.broker.ChamsRegistry.getInstance().isActive();
+		outlines().glow = coldplay.broker.ChamsRegistry.getInstance().isGlow();
 		if (OpenGlHelper.shadersSupported) {
 			if (ShaderLinkHelper.getStaticShaderLinkHelper() == null) ShaderLinkHelper.setNewStaticShaderLinkHelper();
-			final ResourceLocation resourcelocation = new ResourceLocation(outlines().chams
-					? "shaders/post/chams.json" : "shaders/post/entity_outline.json");
+			final ResourceLocation resourcelocation = new ResourceLocation(!outlines().chams ? "shaders/post/entity_outline.json"
+					: outlines().glow ? "shaders/post/glow_esp.json" : "shaders/post/chams.json");
 			try {
 				outlines().shader = new ShaderGroup(this.mc.getTextureManager(), this.mc.getResourceManager(), this.mc.entityRenderer.getWorldFramebuffer(), resourcelocation);
 				this.createBindEntityOutlineFbs(this.mc.entityRenderer.getWorldFramebuffer().framebufferWidth,
@@ -555,7 +557,8 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
 	public void renderEntities(final Entity renderViewEntity, final ICamera camera, final float partialTicks) {
 		if (!Shaders.isShadowPass) {
 			outlines().rendered = false;
-			if (!outlines().initialized || outlines().chams != coldplay.broker.ChamsRegistry.getInstance().isActive()) this.makeEntityOutlineShader();
+			if (!outlines().initialized || outlines().chams != coldplay.broker.ChamsRegistry.getInstance().isActive()
+					|| outlines().glow != coldplay.broker.ChamsRegistry.getInstance().isGlow()) this.makeEntityOutlineShader();
 		}
 		int i = 0;
 		if (Reflector.MinecraftForgeClient_getRenderPass.exists()) i = Reflector.callInt(Reflector.MinecraftForgeClient_getRenderPass);
@@ -646,6 +649,7 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
 				// The compatibility path keeps textured Chams when post-processing is unavailable.
 				// Writers own range culling; vanilla's size-based range would silently drop small targets.
 				final boolean isolated = outlines().chams && this.isRenderEntityOutlines();
+				final boolean glow = isolated && outlines().glow;
 				final boolean shadows = this.renderManager.isRenderShadow();
 				this.renderManager.setRenderShadow(false);
 				try {
@@ -656,6 +660,17 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
 						// Full-precision, private depth: models occlude each other without changing world depth.
 						Framebuffer models = outlines().shader.getFramebufferRaw("models");
 						models.framebufferClear();
+						if (glow) {
+							// ColdPlay >>> Glow: flat color only where terrain hides the model
+							Framebuffer world = this.mc.entityRenderer.getWorldFramebuffer();
+							OpenGlHelper.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, world.framebufferObject);
+							OpenGlHelper.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, models.framebufferObject);
+							GL30.glBlitFramebuffer(0, 0, world.framebufferWidth, world.framebufferHeight,
+									0, 0, models.framebufferWidth, models.framebufferHeight, GL11.GL_DEPTH_BUFFER_BIT, GL11.GL_NEAREST);
+							GlStateManager.depthFunc(GL11.GL_GREATER);
+							this.renderManager.setRenderOutlines(true);
+							// ColdPlay <<<
+						}
 						models.bindFramebuffer(false);
 					} else {
 						GL11.glDepthRange(0.0, 0.05); // Compatibility path when post-processing is unavailable.
@@ -665,10 +680,11 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
 								&& (chamsEntity.ignoreFrustumCheck || camera.isBoundingBoxInFrustum(chamsEntity.getEntityBoundingBox()))) {
 							// Labels and translucent layers can change depth state between entities.
 							GlStateManager.enableDepth();
-							GlStateManager.depthMask(true);
+							GlStateManager.depthMask(!glow);
 							this.renderManager.renderEntitySimple(chamsEntity, partialTicks);
 						}
 					}
+					this.renderManager.setRenderOutlines(false);
 					if (isolated) {
 						GlStateManager.depthMask(false);
 						outlines().shader.loadShaderGroup(partialTicks);

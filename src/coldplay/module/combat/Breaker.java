@@ -2,10 +2,14 @@ package coldplay.module.combat;
 
 import coldplay.event.EventHurt;
 import coldplay.event.EventPriority;
+import coldplay.event.EventRender;
 import coldplay.event.EventRender2D;
 import coldplay.event.EventRender3D;
 import coldplay.event.EventTarget;
 import coldplay.event.EventUpdate;
+import coldplay.gui.Glass;
+import coldplay.gui.GlassShader;
+import coldplay.gui.Theme;
 import coldplay.module.Category;
 import coldplay.module.Module;
 import coldplay.setting.BooleanSetting;
@@ -17,27 +21,40 @@ import coldplay.broker.ActionGuard;
 import coldplay.broker.BedTracker;
 import coldplay.util.BedUtil;
 import coldplay.broker.DigGuard;
+import coldplay.util.ProjectionUtil;
 import coldplay.util.RenderUtil;
 import coldplay.util.RayTraceUtil;
 import coldplay.broker.RotationManager;
 import coldplay.util.ResourcePriority;
+import coldplay.util.font.CustomFont;
+import coldplay.util.font.FontRef;
+import coldplay.util.font.Fonts;
 import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.renderer.RenderGlobal;
+import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.entity.RenderManager;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.BlockPos;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.MathHelper;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
+import net.minecraft.world.World;
+import org.lwjgl.BufferUtils;
 
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
 import java.util.function.BooleanSupplier;
 
 public final class Breaker extends Module {
     private static final String HYPIXEL = "Hypixel";
     private static final String LEGIT = "Legit";
+    private static final String PROGRESS = "Progress";
+    private static final String CUSTOM = "Custom";
 
     private final ModeSetting mode = add(new ModeSetting("Mode", HYPIXEL, HYPIXEL, LEGIT)
             .describe("Hypixel: dig through cover sightlessly (one-adjacent rule). "
@@ -47,21 +64,48 @@ public final class Breaker extends Module {
     private final BooleanSetting ignoreOwnBed = add(new BooleanSetting("Ignore Own Bed", true)
             .describe("Skip the bed you spawned next to."));
     private final BooleanSetting progressBar = add(new BooleanSetting("Progress Bar", true)
-            .describe("HUD bar above the hotbar showing live break progress."));
+            .describe("Ring around the crosshair that fills with break progress, with the block's name under it."));
     private final BooleanSetting highlight = add(new BooleanSetting("Highlight", true)
-            .describe("Box on the digging block whose fill rises with break progress."));
+            .describe("Corner brackets on the digging block that grow until they meet as it breaks."));
+    private final ModeSetting colorMode = add(new ModeSetting("Color", PROGRESS, PROGRESS, CUSTOM)
+            .describe("Progress: red to green as the block breaks. Custom: the Highlight Color."));
     private final ColorSetting highlightColor = add(new ColorSetting("Highlight Color", 0x00FF64)
-            .describe("Highlight box colour."));
+            .describe("Bracket and ring colour in Custom."));
 
     private static final int PRIORITY = ResourcePriority.NORMAL;
     private static final double TURN_RATE = 45.0; // deg/tick
     private static final int POST_BREAK_COOLDOWN = 2; // ticks
     private static final int HURT_PAUSE_TICKS = 3;
 
-    private static final int BAR_WIDTH = 100;
-    private static final int BAR_HEIGHT = 7;
-    private static final int BAR_BOTTOM_OFFSET = 60; // px above the hotbar
-    private static final int HIGHLIGHT_FILL_ALPHA = 90;
+    // Sizes are GUI px.
+    private static final float BRACKET_MIN = 0.16F; // of each edge at 0%, they meet in the middle at 100%
+    private static final float BRACKET_GROW = 0.34F;
+    private static final int FACE_TINT = 36; // alpha of the smoke on the faces you see
+    private static final float LINE_W = 1.5F;
+    private static final float UNDER_W = 2.7F;
+    private static final int UNDER = 0x59000000;
+    // stacked strokes that stand in for the design's blurred glow
+    private static final float[] GLOW_W = {14.0F, 10.0F, 6.0F, 3.0F};
+    private static final float[] GLOW_A = {0.08F, 0.13F, 0.2F, 0.29F};
+    private static final long POP_NANOS = 300_000_000L;
+    private static final float POP_GROW = 0.18F;
+    private static final float POP_W = 1.2F;
+    private static final long HOLD_NANOS = 250_000_000L; // bridges the cooldown between two blocks
+    private static final float RING_R = 11.25F;
+    private static final float RING_W = 1.5F;
+    private static final float RING_UNDER_W = 2.625F;
+    private static final int RING_UNDER = 0x47000000;
+    private static final int RING_TRACK = 0x38FFFFFF;
+    private static final float CHIP_TOP = 18.0F; // below the crosshair
+    private static final float CHIP_H = 15.0F;
+    private static final float CHIP_PAD = 6.0F;
+    private static final float CHIP_GAP = 4.5F;
+    private static final float LIFT = 3.0F; // slides this far while fading
+    private static final int TEXT = 0xFFF4F6F8;
+    private static final int TEXT_DIM = 0xC7F4F6F8;
+    private static final Glass CHIP_GLASS = new Glass(0x800E1015, 0x800E1015, 0x2EFFFFFF, 10.5F, 1.4F, 16.5F, 6.0F, 0.26F);
+    private static final FontRef NAME_FONT = new FontRef(Fonts.GEIST_MEDIUM, 7.875F);
+    private static final FontRef PERCENT_FONT = new FontRef(Fonts.GEIST_MONO_MEDIUM, 7.875F);
 
     private final BooleanSupplier killAuraWorking;
     private Aim aim; // null when idle or hurt-paused
@@ -72,13 +116,37 @@ public final class Breaker extends Module {
     private int hurtPauseTicks;
 
     private final Animation progressAnim = new Animation(0.0, 18.0);
+    private final Animation shownAnim = new Animation(0.0, 16.0);
+
+    // What the visuals follow; the name and progress stay while they fade out.
+    private BlockPos shownPos;
+    private AxisAlignedBB shownBox;
+    private String shownName = "";
+    private float shownProgress;
+    private long shownAt; // nanoTime of the last frame the dig was live
+    private float shown;
+    private AxisAlignedBB popBox;
+    private long popAt;
+
+    // gluProject scratch; the corner arms are framebuffer px, projected in the world pass and drawn on the HUD
+    private final FloatBuffer modelview = BufferUtils.createFloatBuffer(16);
+    private final FloatBuffer projection = BufferUtils.createFloatBuffer(16);
+    private final IntBuffer viewport = BufferUtils.createIntBuffer(16);
+    private final float[] segment = new float[4];
+    private final float[] arms = new float[96];
+    private final boolean[] armShown = new boolean[24];
+    private final float[] popArms = new float[96];
+    private final boolean[] popArmShown = new boolean[24];
+    private boolean armsReady;
+    private boolean popReady;
 
     public Breaker(BooleanSupplier killAuraWorking) {
         super("Breaker", Category.COMBAT,
                 "Breaks nearby beds. Hypixel: one cover block, then through cover. Legit: tunnels what it sees.");
         this.killAuraWorking = killAuraWorking;
         addAutoOff();
-        highlightColor.visibleWhen(highlight::get).indent(1);
+        colorMode.visibleWhen(() -> highlight.get() || progressBar.get()).indent(1);
+        highlightColor.visibleWhen(() -> (highlight.get() || progressBar.get()) && CUSTOM.equals(colorMode.get())).indent(1);
     }
 
     @Override
@@ -87,6 +155,11 @@ public final class Breaker extends Module {
         postBreakCooldown = 0;
         hurtPauseTicks = 0;
         progressAnim.set(0.0);
+        shownAnim.set(0.0);
+        shownPos = null;
+        shownAt = 0L;
+        shown = 0.0F;
+        popBox = null;
     }
 
     @EventTarget
@@ -188,62 +261,180 @@ public final class Breaker extends Module {
         RotationManager.getInstance().request(this, angles[0], angles[1], PRIORITY, TURN_RATE);
     }
 
+    /** Follows the dig once per frame: its box, name and eased progress, the fade, and the pop when it breaks. */
+    @EventTarget
+    public void onRender(EventRender event) {
+        Minecraft mc = Minecraft.getMinecraft();
+        long now = System.nanoTime();
+        BlockPos pos = digging;
+        if (digLive(mc, pos)) {
+            if (!pos.equals(shownPos)) {
+                shownPos = pos;
+                shownName = blockName(mc.theWorld, pos);
+            }
+            Block block = mc.theWorld.getBlockState(pos).getBlock();
+            block.setBlockBoundsBasedOnState(mc.theWorld, pos);
+            shownBox = block.getSelectedBoundingBox(mc.theWorld, pos);
+            shownProgress = animatedProgress(mc);
+            shownAt = now;
+        } else if (shownPos != null) {
+            if (mc.theWorld.isAirBlock(shownPos)) {
+                popBox = shownBox;
+                popAt = now;
+                shownProgress = 1.0F;
+            }
+            shownPos = null;
+        }
+        shown = (float) shownAnim.update(now - shownAt < HOLD_NANOS ? 1.0 : 0.0);
+    }
+
     @EventTarget
     public void onRender3D(EventRender3D event) {
+        armsReady = false;
+        popReady = false;
         if (!highlight.get()) {
             return;
         }
-        Minecraft mc = Minecraft.getMinecraft();
-        BlockPos pos = digging;
-        if (!digLive(mc, pos)) {
+        long age = System.nanoTime() - popAt;
+        boolean pop = popBox != null && age < POP_NANOS;
+        if (shownPos == null && !pop) {
             return;
         }
-        float progress = animatedProgress(mc);
-
-        Block block = mc.theWorld.getBlockState(pos).getBlock();
-        block.setBlockBoundsBasedOnState(mc.theWorld, pos);
-        AxisAlignedBB box = block.getSelectedBoundingBox(mc.theWorld, pos);
-        AxisAlignedBB fill = new AxisAlignedBB(box.minX, box.minY, box.minZ,
-                box.maxX, box.minY + (box.maxY - box.minY) * progress, box.maxZ);
-
-        RenderUtil.beginWorldOverlay(2.0F);
-
-        if (progress > 0.0F) {
-            RenderUtil.drawFilledBox(fill, highlightColor.red(), highlightColor.green(),
-                    highlightColor.blue(), HIGHLIGHT_FILL_ALPHA);
+        RenderManager view = Minecraft.getMinecraft().getRenderManager();
+        ProjectionUtil.captureMatrices(modelview, projection, viewport);
+        if (shownPos != null) {
+            RenderUtil.beginWorldOverlay(1.0F);
+            RenderUtil.drawFilledBox(shownBox, 0x0E, 0x10, 0x15, FACE_TINT);
+            RenderUtil.endWorldOverlay();
+            projectArms(shownBox, BRACKET_MIN + BRACKET_GROW * shownProgress, view, arms, armShown);
+            armsReady = true;
         }
-        RenderGlobal.drawOutlinedBoundingBox(box, highlightColor.red(), highlightColor.green(),
-                highlightColor.blue(), 255);
-
-        RenderUtil.endWorldOverlay();
+        if (pop) {
+            float s = POP_GROW * age / POP_NANOS / 2.0F;
+            AxisAlignedBB grown = popBox.expand((popBox.maxX - popBox.minX) * s, (popBox.maxY - popBox.minY) * s,
+                    (popBox.maxZ - popBox.minZ) * s);
+            // brackets halfway along every edge are the whole box
+            projectArms(grown, 0.5F, view, popArms, popArmShown);
+            popReady = true;
+        }
     }
 
     @EventTarget
     public void onRender2D(EventRender2D event) {
-        if (!progressBar.get()) {
-            return;
-        }
-        Minecraft mc = Minecraft.getMinecraft();
-        if (!digLive(mc, digging)) {
-            return;
-        }
-        float progress = animatedProgress(mc);
-
         ScaledResolution sr = event.getResolution();
-        int centerX = sr.getScaledWidth() / 2;
-        int bottom = sr.getScaledHeight() - BAR_BOTTOM_OFFSET;
-        int top = bottom - BAR_HEIGHT;
-        int left = centerX - BAR_WIDTH / 2;
-        int right = centerX + BAR_WIDTH / 2;
+        float scale = sr.getScaleFactor();
+        if (popReady) {
+            float fade = 1.0F - (System.nanoTime() - popAt) / (float) POP_NANOS;
+            int color = accent(1.0F);
+            for (int i = 0; i < GLOW_W.length; i++) {
+                strokeArms(popArms, popArmShown, scale, GLOW_W[i], Theme.withAlpha(color, Math.round(255 * GLOW_A[i] * fade)));
+            }
+            strokeArms(popArms, popArmShown, scale, POP_W, Theme.withAlpha(0xFFFFFF, Math.round(230 * fade)));
+        }
+        if (armsReady) {
+            int color = accent(shownProgress);
+            for (int i = 0; i < GLOW_W.length; i++) {
+                strokeArms(arms, armShown, scale, GLOW_W[i], Theme.withAlpha(color, Math.round(255 * GLOW_A[i])));
+            }
+            strokeArms(arms, armShown, scale, UNDER_W, UNDER);
+            strokeArms(arms, armShown, scale, LINE_W, color);
+        }
+        popReady = false;
+        armsReady = false;
+        if (progressBar.get() && shown > 0.01F) {
+            drawReticle(sr);
+        }
+    }
 
-        RenderUtil.outline(left, top, right, bottom, 1, 0xFF000000);
-        int fillWidth = Math.round((BAR_WIDTH - 2) * progress);
-        RenderUtil.rectBounds(left + 1, top + 1, left + 1 + fillWidth, bottom - 1,
-                RenderUtil.lerpRedGreen(progress));
+    /** A ring around the crosshair that fills clockwise, and a glass chip under it with the block and percent. */
+    private void drawReticle(ScaledResolution sr) {
+        Fonts.load(sr.getScaleFactor()); // lazy init, needs a live GL context
+        if (!Fonts.isLoaded()) {
+            return;
+        }
+        float a = shown;
+        // the vanilla crosshair is centered half a pixel right of and below the middle
+        float cx = sr.getScaledWidth() / 2 + 0.5F;
+        float cy = sr.getScaledHeight() / 2 + 0.5F + (1.0F - a) * LIFT;
+        float d = RING_R * 2.0F;
+        GlassShader.arc(cx - RING_R, cy - RING_R, d, d, RING_R, RING_UNDER_W, 0.0F, 1.0F, Theme.applyAlpha(RING_UNDER, a));
+        GlassShader.arc(cx - RING_R, cy - RING_R, d, d, RING_R, RING_W, 0.0F, 1.0F, Theme.applyAlpha(RING_TRACK, a));
+        GlassShader.arc(cx - RING_R, cy - RING_R, d, d, RING_R, RING_W, 0.0F, shownProgress,
+                Theme.applyAlpha(accent(shownProgress), a));
 
-        String label = (int) (progress * 100.0F) + "%";
-        mc.fontRendererObj.drawStringWithShadow(label,
-                centerX - mc.fontRendererObj.getStringWidth(label) / 2.0F, top - 10, 0xFFFFFFFF);
+        CustomFont nameFont = NAME_FONT.get();
+        CustomFont percentFont = PERCENT_FONT.get();
+        String percent = (int) (shownProgress * 100.0F) + "%";
+        int percentW = percentFont.getStringWidth(percent);
+        float chipW = CHIP_PAD + nameFont.getStringWidth(shownName) + CHIP_GAP + percentW + CHIP_PAD;
+        float chipX = cx - chipW / 2.0F;
+        float chipY = cy + CHIP_TOP;
+        GlassShader.capture();
+        GlassShader.frost(chipX, chipY, chipW, CHIP_H, CHIP_H / 2.0F, CHIP_GLASS, a);
+        float nameY = chipY + (CHIP_H - nameFont.getHeight()) / 2.0F;
+        nameFont.drawString(shownName, chipX + CHIP_PAD, nameY, Theme.applyAlpha(TEXT_DIM, a));
+        percentFont.drawString(percent, chipX + chipW - CHIP_PAD - percentW,
+                nameY + nameFont.getAscent() - percentFont.getAscent(), Theme.applyAlpha(TEXT, a));
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+        GlStateManager.enableBlend();
+    }
+
+    /** Three arms per corner, each {@code reach} of the way along its edge, as framebuffer px segments. */
+    private void projectArms(AxisAlignedBB box, float reach, RenderManager view, float[] out, boolean[] shownOut) {
+        for (int i = 0; i < 8; i++) {
+            double x = (i & 1) == 0 ? box.minX : box.maxX;
+            double y = (i & 2) == 0 ? box.minY : box.maxY;
+            double z = (i & 4) == 0 ? box.minZ : box.maxZ;
+            for (int k = 0; k < 3; k++) {
+                double ex = k == 0 ? x + ((i & 1) == 0 ? 1 : -1) * (box.maxX - box.minX) * reach : x;
+                double ey = k == 1 ? y + ((i & 2) == 0 ? 1 : -1) * (box.maxY - box.minY) * reach : y;
+                double ez = k == 2 ? z + ((i & 4) == 0 ? 1 : -1) * (box.maxZ - box.minZ) * reach : z;
+                int arm = i * 3 + k;
+                shownOut[arm] = ProjectionUtil.projectSegment(x - view.viewerPosX, y - view.viewerPosY, z - view.viewerPosZ,
+                        ex - view.viewerPosX, ey - view.viewerPosY, ez - view.viewerPosZ,
+                        modelview, projection, viewport, segment);
+                System.arraycopy(segment, 0, out, arm * 4, 4);
+            }
+        }
+    }
+
+    /** One stroke of every corner. Two arms share a joined polyline so a translucent stroke does not double up at the corner. */
+    private static void strokeArms(float[] arms, boolean[] shown, float scale, float width, int color) {
+        for (int i = 0; i < 8; i++) {
+            int a = i * 3, b = a + 1, c = a + 2;
+            if (shown[a] && shown[b] && arms[a * 4] == arms[b * 4] && arms[a * 4 + 1] == arms[b * 4 + 1]) {
+                GlassShader.polyline(arms[a * 4 + 2] / scale, arms[a * 4 + 3] / scale, arms[a * 4] / scale,
+                        arms[a * 4 + 1] / scale, arms[b * 4 + 2] / scale, arms[b * 4 + 3] / scale, width, color);
+            } else {
+                strokeArm(arms, shown, a, scale, width, color);
+                strokeArm(arms, shown, b, scale, width, color);
+            }
+            strokeArm(arms, shown, c, scale, width, color);
+        }
+    }
+
+    private static void strokeArm(float[] arms, boolean[] shown, int arm, float scale, float width, int color) {
+        if (shown[arm]) {
+            int o = arm * 4;
+            GlassShader.line(arms[o] / scale, arms[o + 1] / scale, arms[o + 2] / scale, arms[o + 3] / scale, width, color);
+        }
+    }
+
+    private int accent(float progress) {
+        if (CUSTOM.equals(colorMode.get())) {
+            return 0xFF000000 | highlightColor.red() << 16 | highlightColor.green() << 8 | highlightColor.blue();
+        }
+        return Theme.healthColor(progress);
+    }
+
+    /** The item name, so dyed wool reads "Red Wool"; blocks without an item fall back to the block name. */
+    private static String blockName(World world, BlockPos pos) {
+        Block block = world.getBlockState(pos).getBlock();
+        Item item = block.getItem(world, pos);
+        if (item == null) {
+            return block.getLocalizedName();
+        }
+        return new ItemStack(item, 1, block.getDamageValue(world, pos)).getDisplayName();
     }
 
     private static boolean ready(Minecraft mc, EntityPlayerSP player) {

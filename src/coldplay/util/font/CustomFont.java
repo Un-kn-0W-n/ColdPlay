@@ -242,6 +242,23 @@ public final class CustomFont {
         endDraw();
     }
 
+    /** {@link #drawString} over an {@code outline} colored halo about {@code radius} GUI px wide. */
+    public void drawStringWithOutline(String text, float x, float y, int argb, int outline, float radius) {
+        if ((argb & 0xFC000000) == 0) {
+            argb |= 0xFF000000;
+        }
+        // eight offset copies; about two overlap along a straight edge, so each carries half the density
+        double alpha = (outline >>> 24) / 255.0;
+        int copy = (int) Math.round((1.0 - Math.sqrt(1.0 - alpha)) * 255.0) << 24 | (outline & 0xFFFFFF);
+        WorldRenderer wr = beginDraw();
+        for (int i = 0; i < 8; i++) {
+            double angle = i * Math.PI / 4.0;
+            appendString(wr, text, x + (float) Math.cos(angle) * radius, y + (float) Math.sin(angle) * radius, copy, 0.0F);
+        }
+        appendString(wr, text, x, y, argb, 0.0F);
+        endDraw();
+    }
+
     private void appendGlyph(WorldRenderer wr, int c, float penX, float penY, int r, int g, int b, int a) {
         int col = c % GRID;
         int row = c / GRID;

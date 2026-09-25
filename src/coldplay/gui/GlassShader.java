@@ -25,6 +25,9 @@ public final class GlassShader {
     private static final int BLUR = 1;
     private static final int IMAGE = 2;
     private static final int ARC = 3;
+    private static final int POLYLINE = 4;
+    private static final int TRIANGLE = 5;
+    private static final int ELLIPSE = 6;
 
     private static final String VERTEX_SRC = "#version 120\n"
             + "uniform vec2 origin;\n"
@@ -52,11 +55,40 @@ public final class GlassShader {
             + "uniform float lod;\n"
             + "uniform float saturation;\n"
             + "uniform vec3 arc;\n"
+            + "uniform vec2 pointA;\n"
+            + "uniform vec2 pointB;\n"
+            + "uniform vec2 pointC;\n"
+            + "uniform vec4 color2;\n"
+            + "uniform float mid;\n"
+            + "uniform float opacity;\n"
             + "uniform sampler2D image;\n"
             + "varying vec2 local;\n"
             + "float box(vec2 p) {\n"
             + "    vec2 q = abs(p - size * 0.5) - size * 0.5 + radius;\n"
             + "    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;\n"
+            + "}\n"
+            // distance to the segment ab; t is how far along it the nearest point lies
+            + "float segment(vec2 p, vec2 a, vec2 b, out float t) {\n"
+            + "    vec2 pa = p - a, ba = b - a;\n"
+            + "    t = clamp(dot(pa, ba) / max(dot(ba, ba), 0.000001), 0.0, 1.0);\n"
+            + "    return length(pa - ba * t);\n"
+            + "}\n"
+            + "float triangle(vec2 p, vec2 a, vec2 b, vec2 c) {\n"
+            + "    vec2 e0 = b - a, e1 = c - b, e2 = a - c;\n"
+            + "    vec2 v0 = p - a, v1 = p - b, v2 = p - c;\n"
+            + "    vec2 q0 = v0 - e0 * clamp(dot(v0, e0) / dot(e0, e0), 0.0, 1.0);\n"
+            + "    vec2 q1 = v1 - e1 * clamp(dot(v1, e1) / dot(e1, e1), 0.0, 1.0);\n"
+            + "    vec2 q2 = v2 - e2 * clamp(dot(v2, e2) / dot(e2, e2), 0.0, 1.0);\n"
+            + "    float s = sign(e0.x * e2.y - e0.y * e2.x);\n"
+            + "    vec2 d = min(min(vec2(dot(q0, q0), s * (v0.x * e0.y - v0.y * e0.x)),\n"
+            + "            vec2(dot(q1, q1), s * (v1.x * e1.y - v1.y * e1.x))),\n"
+            + "            vec2(dot(q2, q2), s * (v2.x * e2.y - v2.y * e2.x)));\n"
+            + "    return -sqrt(d.x) * sign(d.y);\n"
+            + "}\n"
+            // close to the true distance near the edge, which is all the anti-aliasing needs
+            + "float ellipse(vec2 p, vec2 r) {\n"
+            + "    float k0 = length(p / r);\n"
+            + "    return k0 * (k0 - 1.0) / max(length(p / (r * r)), 0.00001);\n"
             + "}\n"
             // distance along the outline, clockwise from the top center; e is the straight half length of each side
             + "float along(vec2 p, vec2 e, float r) {\n"
@@ -95,10 +127,30 @@ public final class GlassShader {
             + "        vec2 e = size * 0.5 - radius;\n"
             + "        float len = 4.0 * (e.x + e.y + 1.5707963 * radius);\n"
             + "        float s = along(local - size * 0.5, e, radius) / len;\n"
-            // past either end, measure to the end point so the caps come out round
-            + "        float gap = s < arc.y || s > arc.z ? min(mod(arc.y - s, 1.0), mod(s - arc.z, 1.0)) * len : 0.0;\n"
+            // past either end, measure to the end point so the caps come out round; to may pass 1 and wrap
+            + "        float ds = mod(s - arc.y, 1.0);\n"
+            + "        float gap = ds > arc.z - arc.y ? min(1.0 - ds, ds - (arc.z - arc.y)) * len : 0.0;\n"
             + "        float line = clamp(0.5 - (length(vec2(gap, d)) - arc.x) / aa, 0.0, 1.0);\n"
             + "        gl_FragColor = vec4(color0.rgb, color0.a * line);\n"
+            + "        return;\n"
+            + "    }\n"
+            + "    if (mode == 4) {\n"
+            + "        float t;\n"
+            + "        float unused;\n"
+            + "        float e = min(segment(local, pointA, pointB, t), segment(local, pointB, pointC, unused)) - arc.x;\n"
+            + "        vec4 c = t < mid ? mix(color0, color2, t / max(mid, 0.0001))\n"
+            + "                : mix(color2, color1, (t - mid) / max(1.0 - mid, 0.0001));\n"
+            + "        gl_FragColor = vec4(c.rgb, c.a * clamp(0.5 - e / fwidth(e), 0.0, 1.0));\n"
+            + "        return;\n"
+            + "    }\n"
+            + "    if (mode >= 5) {\n"
+            + "        float e = mode == 5 ? triangle(local, pointA, pointB, pointC) : ellipse(local - size * 0.5, size * 0.5);\n"
+            + "        float ae = fwidth(e);\n"
+            // the outline is centered on the edge and drawn over the fill
+            + "        float fillA = color0.a * clamp(0.5 - e / ae, 0.0, 1.0);\n"
+            + "        float strokeA = arc.x > 0.0 ? color1.a * clamp(0.5 - (abs(e) - arc.x) / ae, 0.0, 1.0) : 0.0;\n"
+            + "        float a = strokeA + fillA * (1.0 - strokeA);\n"
+            + "        gl_FragColor = vec4((color1.rgb * strokeA + color0.rgb * fillA * (1.0 - strokeA)) / max(a, 0.0001), a);\n"
             + "        return;\n"
             + "    }\n"
             + "    float cover = clamp(0.5 - d / aa, 0.0, 1.0);\n"
@@ -106,7 +158,7 @@ public final class GlassShader {
             + "    vec2 t = local / size;\n"
             + "    vec4 fill = mix(color0, color1, clamp(dot(t, gradient), 0.0, 1.0));\n"
             + "    if (mode == 1) {\n"
-            + "        fill = vec4(mix(backdrop(), fill.rgb, fill.a), 1.0);\n"
+            + "        fill = vec4(mix(backdrop(), fill.rgb, fill.a), opacity);\n"
             + "    } else if (mode == 2) {\n"
             + "        fill *= texture2D(image, mix(uv.xy, uv.zw, clamp(t, 0.0, 0.999)));\n"
             + "    }\n"
@@ -145,11 +197,18 @@ public final class GlassShader {
 
     /** {@link #panel} over the frame taken by the last {@link #capture()}. */
     public static void frost(float x, float y, float w, float h, float r, Glass glass) {
+        frost(x, y, w, h, r, glass, 1.0F);
+    }
+
+    /** {@link #frost} faded to {@code opacity}, backdrop, rim and shadow alike. */
+    public static void frost(float x, float y, float w, float h, float r, Glass glass, float opacity) {
         if (use()) {
             GlStateManager.bindTexture(backdrop); // text drawn since the capture rebinds unit 0
             blurUniforms(glass);
-            draw(x, y, w, h, r, glass.top, glass.bottom, true, glass.rim, 0.55F,
-                    glass.shadow, glass.shadowOffset, glass.shadowAlpha, BLUR);
+            GL20.glUniform1f(uniform("opacity"), opacity);
+            int rim = Math.round((glass.rim >>> 24) * opacity) << 24 | glass.rim & 0x00FFFFFF;
+            draw(x, y, w, h, r, glass.top, glass.bottom, true, rim, 0.55F,
+                    glass.shadow, glass.shadowOffset, glass.shadowAlpha * opacity, BLUR);
         }
     }
 
@@ -177,7 +236,7 @@ public final class GlassShader {
 
     /**
      * A {@code width} line centered on the rounded outline, covering {@code from} to {@code to}
-     * of the way round clockwise from the top center, with round ends.
+     * of the way round clockwise from the top center, with round ends. {@code to} may pass 1 to wrap past the top.
      */
     public static void arc(float x, float y, float w, float h, float r, float width, float from, float to, int color) {
         if (to > from && use()) {
@@ -185,6 +244,61 @@ public final class GlassShader {
             // shadow is unused in this mode, it only pads the quad for the line's outer half
             draw(x, y, w, h, r, color, color, false, 0, 0.0F, width, 0.0F, 0.0F, ARC);
         }
+    }
+
+    /** A {@code width} line from a to b with round ends, in one color. */
+    public static void line(float ax, float ay, float bx, float by, float width, int color) {
+        polyline(ax, ay, bx, by, bx, by, width, color, color, 0.5F, color);
+    }
+
+    /** A {@code width} line from a to b with round ends, fading from {@code start} through {@code middle} at {@code mid} to {@code end}. */
+    public static void line(float ax, float ay, float bx, float by, float width, int start, int middle, float mid, int end) {
+        polyline(ax, ay, bx, by, bx, by, width, start, middle, mid, end);
+    }
+
+    /** Two joined segments, a to b to c, with round ends and a round join that does not double up. */
+    public static void polyline(float ax, float ay, float bx, float by, float cx, float cy, float width, int color) {
+        polyline(ax, ay, bx, by, cx, cy, width, color, color, 0.5F, color);
+    }
+
+    private static void polyline(float ax, float ay, float bx, float by, float cx, float cy, float width,
+                                 int start, int middle, float mid, int end) {
+        if (use()) {
+            float x = Math.min(ax, Math.min(bx, cx)), y = Math.min(ay, Math.min(by, cy));
+            points(ax - x, ay - y, bx - x, by - y, cx - x, cy - y);
+            color("color2", middle);
+            GL20.glUniform1f(uniform("mid"), mid);
+            GL20.glUniform3f(uniform("arc"), width / 2.0F, 0.0F, 0.0F);
+            draw(x, y, Math.max(ax, Math.max(bx, cx)) - x, Math.max(ay, Math.max(by, cy)) - y, 0.0F,
+                    start, end, false, 0, 0.0F, width / 2.0F, 0.0F, 0.0F, POLYLINE);
+        }
+    }
+
+    /** A filled triangle with a {@code strokeWidth} outline centered on its edges; pass 0 for no outline. */
+    public static void triangle(float ax, float ay, float bx, float by, float cx, float cy,
+                                int fill, int stroke, float strokeWidth) {
+        if (use()) {
+            float x = Math.min(ax, Math.min(bx, cx)), y = Math.min(ay, Math.min(by, cy));
+            points(ax - x, ay - y, bx - x, by - y, cx - x, cy - y);
+            GL20.glUniform3f(uniform("arc"), strokeWidth / 2.0F, 0.0F, 0.0F);
+            draw(x, y, Math.max(ax, Math.max(bx, cx)) - x, Math.max(ay, Math.max(by, cy)) - y, 0.0F,
+                    fill, stroke, false, 0, 0.0F, strokeWidth / 2.0F, 0.0F, 0.0F, TRIANGLE);
+        }
+    }
+
+    /** A filled ellipse with a {@code strokeWidth} outline centered on its edge; pass 0 for no outline. */
+    public static void ellipse(float cx, float cy, float rx, float ry, int fill, int stroke, float strokeWidth) {
+        if (use()) {
+            GL20.glUniform3f(uniform("arc"), strokeWidth / 2.0F, 0.0F, 0.0F);
+            draw(cx - rx, cy - ry, rx * 2.0F, ry * 2.0F, 0.0F, fill, stroke, false, 0, 0.0F,
+                    strokeWidth / 2.0F, 0.0F, 0.0F, ELLIPSE);
+        }
+    }
+
+    private static void points(float ax, float ay, float bx, float by, float cx, float cy) {
+        GL20.glUniform2f(uniform("pointA"), ax, ay);
+        GL20.glUniform2f(uniform("pointB"), bx, by);
+        GL20.glUniform2f(uniform("pointC"), cx, cy);
     }
 
     /** The (u0, v0)-(u1, v1) region of the bound texture, tinted. */

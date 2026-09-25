@@ -339,6 +339,15 @@ public class ItemRenderer {
 						break;
 					case BLOCK:
 						final float oldAnimationProgress = MathHelper.sin(MathHelper.sqrt_float(swingProgress) * (float) Math.PI);
+						// ColdPlay >>> BlockAnimation Push jab
+						if (coldplay.util.BlockPose.push()) {
+							GlStateManager.translate(-oldAnimationProgress * 0.12F, oldAnimationProgress * 0.05F, -oldAnimationProgress * 0.3F);
+							this.transformFirstPersonItem(equipProgress, 0F);
+							this.doBlockTransformations();
+							GlStateManager.rotate(-oldAnimationProgress * 10.0F, 1.0F, 0.0F, 0.0F);
+							break;
+						}
+						// ColdPlay <<<
 
 						if (oldAnimations) {
 							this.transformFirstPersonItem(equipProgress, 0F);
@@ -356,6 +365,16 @@ public class ItemRenderer {
 						GL11.glRotatef(60.0F, 0.0F, 0.0F, 1.0F);
 						GL11.glRotatef(10.0F, 1.0F, 0.0F, 0.0F);
 						GL11.glRotatef(50.0F, 0.0F, 1.0F, 0.0F);
+						// ColdPlay >>> undo for the fake block pose
+						// RenderItem only undoes this while an item is in use
+						if (abstractclientplayer.getItemInUseCount() == 0) {
+							GL11.glTranslatef(0.05F, 0.0F, 0.0F);
+							GL11.glRotatef(-50.0F, 0.0F, 1.0F, 0.0F);
+							GL11.glRotatef(-10.0F, 1.0F, 0.0F, 0.0F);
+							GL11.glRotatef(-60.0F, 0.0F, 0.0F, 1.0F);
+							break;
+						}
+						// ColdPlay <<<
 						if (this.mc.thePlayer.isSneaking()) {
 							GL11.glTranslatef(0.1F, -0.05F, -0.05F);
 							break;

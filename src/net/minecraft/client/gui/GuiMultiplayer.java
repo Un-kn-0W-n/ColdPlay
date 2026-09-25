@@ -1,16 +1,20 @@
 package net.minecraft.client.gui;
 
-import coldplay.gui.BackgroundShader;
-import coldplay.gui.MenuButton;
-import coldplay.util.font.Fonts;
+import coldplay.gui.GlassList;
+import coldplay.gui.GlassMenuButton;
+import coldplay.gui.GlassScreen;
+import coldplay.gui.GlassUi;
+import coldplay.gui.Icons;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.GuiConnecting;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.ServerList;
 import net.minecraft.client.network.LanServerDetector;
 import net.minecraft.client.network.OldServerPinger;
 import net.minecraft.client.resources.I18n;
+import net.minecraft.util.EnumChatFormatting;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.lwjglx.input.Keyboard;
@@ -18,12 +22,14 @@ import org.lwjglx.input.Keyboard;
 import java.io.IOException;
 import java.util.List;
 
-public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
+public class GuiMultiplayer extends GlassScreen implements GuiYesNoCallback {
     private static final Logger logger = LogManager.getLogger();
+    private static final float GAP = 3.0F;
     private final OldServerPinger oldServerPinger = new OldServerPinger();
     private final GuiScreen parentScreen;
     private ServerSelectionList serverListSelector;
     private ServerList savedServerList;
+    private final GlassList list = new GlassList();
     private GuiButton btnEditServer;
     private GuiButton btnSelectServer;
     private GuiButton btnDeleteServer;
@@ -31,6 +37,8 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
     private boolean addingServer;
     private boolean editingServer;
     private boolean directConnect;
+    private int lastClicked = -1;
+    private long lastClickTime;
 
     /**
      * The text to be displayed when the player's cursor hovers over a server listing.
@@ -66,36 +74,39 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
                 logger.warn("Unable to start LAN server detection: " + exception.getMessage());
             }
 
-            this.serverListSelector = new ServerSelectionList(this, this.mc, this.width, this.height, 32, this.height - 64, 36);
+            this.serverListSelector = new ServerSelectionList(this);
             this.serverListSelector.func_148195_a(this.savedServerList);
-        } else {
-            this.serverListSelector.setDimensions(this.width, this.height, 32, this.height - 64);
         }
 
+        this.setCard(510.0F, 408.0F);
+        this.list.place(this.cardX + PAD, this.cardY + 55.5F, 480.0F, 300.0F);
         this.createButtons();
     }
 
-    /**
-     * Handles mouse input.
-     */
-    public void handleMouseInput() throws IOException {
-        super.handleMouseInput();
-        this.serverListSelector.handleMouseInput();
+    public void createButtons() {
+        this.addBack(0);
+        float right = this.cardX + this.cardW - PAD;
+        float y = this.cardY + PAD_TOP + 0.75F;
+        float addX = right - GlassUi.chipWidth("Add Server", Icons.Icon.PLUS, false);
+        float directX = addX - 6.0F - GlassUi.chipWidth("Direct Connect", Icons.Icon.LINK, false);
+        this.buttonList.add(this.chip(3, addX, y, "Add Server", Icons.Icon.PLUS, false));
+        this.buttonList.add(this.chip(4, directX, y, "Direct Connect", Icons.Icon.LINK, false));
+        this.buttonList.add(new GlassMenuButton(8, directX - 6.0F - GlassUi.CHIP_H, y, GlassUi.CHIP_H, GlassUi.CHIP_H,
+                "Refresh", Icons.Icon.REFRESH, GlassMenuButton.Style.ICON, false));
+
+        float fy = this.cardY + 367.5F;
+        this.buttonList.add(this.btnEditServer = this.chip(7, this.cardX + PAD, fy, "Edit", Icons.Icon.PENCIL, false));
+        this.buttonList.add(this.btnDeleteServer = this.chip(2, ((GlassMenuButton) this.btnEditServer).right() + 6.0F, fy,
+                "Delete", Icons.Icon.TRASH, true));
+        float joinW = GlassUi.chipWidth("Join Server", Icons.Icon.PLAY, true);
+        this.buttonList.add(this.btnSelectServer = new GlassMenuButton(1, right - joinW, fy, joinW, GlassUi.CHIP_H,
+                "Join Server", Icons.Icon.PLAY, GlassMenuButton.Style.PRIMARY, false));
+        this.selectServer(this.serverListSelector.func_148193_k());
     }
 
-    public void createButtons() {
-        this.buttonList.add(this.btnEditServer = new MenuButton(7, this.width / 2 - 154, this.height - 28, 70, 20, I18n.format("selectServer.edit")));
-        this.buttonList.add(this.btnDeleteServer = new MenuButton(2, this.width / 2 - 74, this.height - 28, 70, 20,
-                I18n.format("selectServer.delete"), true));
-        this.buttonList.add(this.btnSelectServer = new MenuButton(1, this.width / 2 - 154, this.height - 52, 100, 20,
-                I18n.format("selectServer.select")));
-        this.buttonList.add(new MenuButton(4, this.width / 2 - 50, this.height - 52, 100, 20,
-                I18n.format("selectServer.direct")));
-        this.buttonList.add(new MenuButton(3, this.width / 2 + 54, this.height - 52, 100, 20,
-                I18n.format("selectServer.add")));
-        this.buttonList.add(new MenuButton(8, this.width / 2 + 4, this.height - 28, 70, 20, I18n.format("selectServer.refresh")));
-        this.buttonList.add(new MenuButton(0, this.width / 2 + 80, this.height - 28, 75, 20, I18n.format("gui.cancel")));
-        this.selectServer(this.serverListSelector.func_148193_k());
+    private GlassMenuButton chip(int id, float x, float y, String label, Icons.Icon icon, boolean danger) {
+        return new GlassMenuButton(id, x, y, GlassUi.chipWidth(label, icon, false), GlassUi.CHIP_H, label, icon,
+                GlassMenuButton.Style.CHIP_FIT, danger);
     }
 
     /**
@@ -127,15 +138,20 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
         this.oldServerPinger.clearPendingNetworks();
     }
 
+    private ServerSelectionList.Entry selectedEntry() {
+        int i = this.serverListSelector.func_148193_k();
+        return i < 0 ? null : this.serverListSelector.getListEntry(i);
+    }
+
     /**
      * Called by the controls from the buttonList when activated. (Mouse pressed for buttons)
      */
     protected void actionPerformed(GuiButton button) throws IOException {
         if (button.enabled) {
-            GuiListExtended.IGuiListEntry guilistextended$iguilistentry = this.serverListSelector.func_148193_k() < 0 ? null : this.serverListSelector.getListEntry(this.serverListSelector.func_148193_k());
+            ServerSelectionList.Entry entry = this.selectedEntry();
 
-            if (button.id == 2 && guilistextended$iguilistentry instanceof ServerListEntryNormal) {
-                String s4 = ((ServerListEntryNormal) guilistextended$iguilistentry).getServerData().serverName;
+            if (button.id == 2 && entry instanceof ServerListEntryNormal) {
+                String s4 = ((ServerListEntryNormal) entry).getServerData().serverName;
 
                 if (s4 != null) {
                     this.deletingServer = true;
@@ -154,9 +170,9 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
             } else if (button.id == 3) {
                 this.addingServer = true;
                 this.mc.displayGuiScreen(new GuiScreenAddServer(this, this.selectedServer = new ServerData(I18n.format("selectServer.defaultName"), "", false)));
-            } else if (button.id == 7 && guilistextended$iguilistentry instanceof ServerListEntryNormal) {
+            } else if (button.id == 7 && entry instanceof ServerListEntryNormal) {
                 this.editingServer = true;
-                ServerData serverdata = ((ServerListEntryNormal) guilistextended$iguilistentry).getServerData();
+                ServerData serverdata = ((ServerListEntryNormal) entry).getServerData();
                 this.selectedServer = new ServerData(serverdata.serverName, serverdata.serverIP, false);
                 this.selectedServer.copyFrom(serverdata);
                 this.mc.displayGuiScreen(new GuiScreenAddServer(this, this.selectedServer));
@@ -173,12 +189,12 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
     }
 
     public void confirmClicked(boolean result, int id) {
-        GuiListExtended.IGuiListEntry guilistextended$iguilistentry = this.serverListSelector.func_148193_k() < 0 ? null : this.serverListSelector.getListEntry(this.serverListSelector.func_148193_k());
+        ServerSelectionList.Entry entry = this.selectedEntry();
 
         if (this.deletingServer) {
             this.deletingServer = false;
 
-            if (result && guilistextended$iguilistentry instanceof ServerListEntryNormal) {
+            if (result && entry instanceof ServerListEntryNormal) {
                 this.savedServerList.removeServerData(this.serverListSelector.func_148193_k());
                 this.savedServerList.saveServerList();
                 this.serverListSelector.setSelectedSlotIndex(-1);
@@ -208,8 +224,8 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
         } else if (this.editingServer) {
             this.editingServer = false;
 
-            if (result && guilistextended$iguilistentry instanceof ServerListEntryNormal) {
-                ServerData serverdata = ((ServerListEntryNormal) guilistextended$iguilistentry).getServerData();
+            if (result && entry instanceof ServerListEntryNormal) {
+                ServerData serverdata = ((ServerListEntryNormal) entry).getServerData();
                 serverdata.serverName = this.selectedServer.serverName;
                 serverdata.serverIP = this.selectedServer.serverIP;
                 serverdata.copyFrom(this.selectedServer);
@@ -227,7 +243,7 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
      */
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         int i = this.serverListSelector.func_148193_k();
-        GuiListExtended.IGuiListEntry guilistextended$iguilistentry = i < 0 ? null : this.serverListSelector.getListEntry(i);
+        ServerSelectionList.Entry entry = this.selectedEntry();
 
         if (keyCode == 63) {
             this.refreshServerList();
@@ -235,23 +251,16 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
             if (i >= 0) {
                 if (keyCode == 200) {
                     if (isShiftKeyDown()) {
-                        if (i > 0 && guilistextended$iguilistentry instanceof ServerListEntryNormal) {
+                        if (i > 0 && entry instanceof ServerListEntryNormal) {
                             this.savedServerList.swapServers(i, i - 1);
-                            this.selectServer(this.serverListSelector.func_148193_k() - 1);
-                            this.serverListSelector.scrollBy(-this.serverListSelector.getSlotHeight());
+                            this.selectServer(i - 1);
                             this.serverListSelector.func_148195_a(this.savedServerList);
                         }
                     } else if (i > 0) {
-                        this.selectServer(this.serverListSelector.func_148193_k() - 1);
-                        this.serverListSelector.scrollBy(-this.serverListSelector.getSlotHeight());
+                        this.selectServer(i - 1);
 
-                        if (this.serverListSelector.getListEntry(this.serverListSelector.func_148193_k()) instanceof ServerListEntryLanScan) {
-                            if (this.serverListSelector.func_148193_k() > 0) {
-                                this.selectServer(this.serverListSelector.getSize() - 1);
-                                this.serverListSelector.scrollBy(-this.serverListSelector.getSlotHeight());
-                            } else {
-                                this.selectServer(-1);
-                            }
+                        if (this.serverListSelector.getListEntry(i - 1) instanceof ServerListEntryLanScan) {
+                            this.selectServer(i - 2);
                         }
                     } else {
                         this.selectServer(-1);
@@ -261,20 +270,13 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
                         if (i < this.savedServerList.countServers() - 1) {
                             this.savedServerList.swapServers(i, i + 1);
                             this.selectServer(i + 1);
-                            this.serverListSelector.scrollBy(this.serverListSelector.getSlotHeight());
                             this.serverListSelector.func_148195_a(this.savedServerList);
                         }
-                    } else if (i < this.serverListSelector.getSize()) {
-                        this.selectServer(this.serverListSelector.func_148193_k() + 1);
-                        this.serverListSelector.scrollBy(this.serverListSelector.getSlotHeight());
+                    } else if (i < this.serverListSelector.getSize() - 1) {
+                        this.selectServer(i + 1);
 
-                        if (this.serverListSelector.getListEntry(this.serverListSelector.func_148193_k()) instanceof ServerListEntryLanScan) {
-                            if (this.serverListSelector.func_148193_k() < this.serverListSelector.getSize() - 1) {
-                                this.selectServer(this.serverListSelector.getSize() + 1);
-                                this.serverListSelector.scrollBy(this.serverListSelector.getSlotHeight());
-                            } else {
-                                this.selectServer(-1);
-                            }
+                        if (this.serverListSelector.getListEntry(i + 1) instanceof ServerListEntryLanScan) {
+                            this.selectServer(i + 2 < this.serverListSelector.getSize() ? i + 2 : -1);
                         }
                     } else {
                         this.selectServer(-1);
@@ -282,7 +284,7 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
                 } else if (keyCode != 28 && keyCode != 156) {
                     super.keyTyped(typedChar, keyCode);
                 } else {
-                    this.actionPerformed(this.buttonList.get(2));
+                    this.actionPerformed(this.btnSelectServer);
                 }
             } else {
                 super.keyTyped(typedChar, keyCode);
@@ -290,29 +292,117 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
         }
     }
 
-    /**
-     * Draws the screen and all the components in it. Args : mouseX, mouseY, renderPartialTicks
-     */
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+    @Override
+    protected void drawCard(int mouseX, int mouseY, float partialTicks) {
         this.hoveringText = null;
-        BackgroundShader.draw(this.width, this.height, this.mc.displayWidth, this.mc.displayHeight);
-        Fonts.load();
-        this.serverListSelector.drawScreen(mouseX, mouseY, partialTicks);
-        BackgroundShader.drawSectionTitle(I18n.format("multiplayer.title"), this.width / 2.0F, 14.0F);
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        this.drawHeader("Play", "Multiplayer");
+        GlassUi.well(this.list.x, this.list.y, this.list.w, this.list.h);
+        int size = this.serverListSelector.getSize();
+        this.list.setContent(this.rowTop(size - 1) + this.serverListSelector.getListEntry(size - 1).height() + GAP);
+        int hover = this.rowAt(mouseX, mouseY);
+        boolean inside = this.list.contains(mouseX, mouseY);
+        float x = this.list.x + GAP;
+        float w = this.list.w - GAP * 2.0F;
+        this.clip(this.list.x, this.list.y, this.list.w, this.list.h);
+        GlassUi.section("Saved servers", x + 7.5F, this.list.top() + GAP + 6.0F);
+        for (int i = 0; i < size; i++) {
+            ServerSelectionList.Entry entry = this.serverListSelector.getListEntry(i);
+            float y = this.list.top() + this.rowTop(i);
+            if (entry instanceof ServerListEntryLanScan) {
+                GlassUi.section("Local network", x + 7.5F, y - GAP - 19.5F + 9.0F);
+            }
+            if (y + entry.height() > this.list.y && y < this.list.y + this.list.h) {
+                entry.draw(i, x, y, w, inside ? mouseX : -1, inside ? mouseY : -1,
+                        i == hover && !(entry instanceof ServerListEntryLanScan), i == this.serverListSelector.func_148193_k());
+            }
+        }
+        this.unclip();
+        this.list.drawScrollbar();
+        this.drawButtons(mouseX, mouseY, partialTicks);
 
-        if (this.hoveringText != null) {
-            this.drawHoveringText(Lists.newArrayList(Splitter.on("\n").split(this.hoveringText)), mouseX, mouseY);
+        if (this.hoveringText != null && !this.hoveringText.isEmpty()) {
+            GlassUi.tooltip(Lists.newArrayList(Splitter.on('\n').split(EnumChatFormatting.getTextWithoutFormattingCodes(this.hoveringText))),
+                    mouseX, mouseY, this.toCardX(this.width), this.toCardY(this.height));
         }
     }
 
-    public void connectToSelected() {
-        GuiListExtended.IGuiListEntry guilistextended$iguilistentry = this.serverListSelector.func_148193_k() < 0 ? null : this.serverListSelector.getListEntry(this.serverListSelector.func_148193_k());
+    /** Content y of a row; the section labels sit above the first row and above the LAN scan row. */
+    private float rowTop(int index) {
+        float y = GAP + 16.5F + GAP;
+        for (int i = 0; i <= index; i++) {
+            ServerSelectionList.Entry entry = this.serverListSelector.getListEntry(i);
+            if (entry instanceof ServerListEntryLanScan) {
+                y += 19.5F + GAP;
+            }
+            if (i < index) {
+                y += entry.height() + GAP;
+            }
+        }
+        return y;
+    }
 
-        if (guilistextended$iguilistentry instanceof ServerListEntryNormal) {
-            this.connectToServer(((ServerListEntryNormal) guilistextended$iguilistentry).getServerData());
-        } else if (guilistextended$iguilistentry instanceof ServerListEntryLanDetected) {
-            LanServerDetector.LanServer lanserverdetector$lanserver = ((ServerListEntryLanDetected) guilistextended$iguilistentry).getLanServer();
+    private int rowAt(int mouseX, int mouseY) {
+        if (!this.list.contains(mouseX, mouseY)) {
+            return -1;
+        }
+        for (int i = 0; i < this.serverListSelector.getSize(); i++) {
+            float top = this.list.top() + this.rowTop(i);
+            if (mouseY >= top && mouseY < top + this.serverListSelector.getListEntry(i).height()) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    @Override
+    protected void cardClicked(int mouseX, int mouseY, int button) {
+        int index = this.rowAt(mouseX, mouseY);
+        if (button != 0 || index < 0) {
+            return;
+        }
+        ServerSelectionList.Entry entry = this.serverListSelector.getListEntry(index);
+        if (entry instanceof ServerListEntryLanScan) {
+            return;
+        }
+        if (entry instanceof ServerListEntryNormal) {
+            float y = this.list.top() + this.rowTop(index);
+            int move = ((ServerListEntryNormal) entry).reorderAt(index, this.list.x + GAP, y, this.list.w - GAP * 2.0F, mouseX, mouseY);
+            if (move < 0) {
+                this.func_175391_a((ServerListEntryNormal) entry, index, isShiftKeyDown());
+                return;
+            }
+            if (move > 0) {
+                this.func_175393_b((ServerListEntryNormal) entry, index, isShiftKeyDown());
+                return;
+            }
+        }
+        boolean twice = index == this.lastClicked && Minecraft.getSystemTime() - this.lastClickTime < 250L;
+        this.lastClicked = index;
+        this.lastClickTime = Minecraft.getSystemTime();
+        this.selectServer(index);
+        if (twice) {
+            this.connectToSelected();
+        }
+    }
+
+    @Override
+    protected void cardScrolled(int mouseX, int mouseY, int wheel) {
+        this.list.wheel(wheel, 51.0F);
+    }
+
+    @Override
+    protected void drawFooter() {
+        this.versionChip();
+        this.hintChip("F5", "Refresh", "Shift + Up/Down", "Reorder");
+    }
+
+    public void connectToSelected() {
+        ServerSelectionList.Entry entry = this.selectedEntry();
+
+        if (entry instanceof ServerListEntryNormal) {
+            this.connectToServer(((ServerListEntryNormal) entry).getServerData());
+        } else if (entry instanceof ServerListEntryLanDetected) {
+            LanServerDetector.LanServer lanserverdetector$lanserver = ((ServerListEntryLanDetected) entry).getLanServer();
             this.connectToServer(new ServerData(lanserverdetector$lanserver.getServerMotd(), lanserverdetector$lanserver.getServerIpPort(), true));
         }
     }
@@ -323,18 +413,20 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
 
     public void selectServer(int index) {
         this.serverListSelector.setSelectedSlotIndex(index);
-        GuiListExtended.IGuiListEntry guilistextended$iguilistentry = index < 0 ? null : this.serverListSelector.getListEntry(index);
+        ServerSelectionList.Entry entry = index < 0 ? null : this.serverListSelector.getListEntry(index);
         this.btnSelectServer.enabled = false;
         this.btnEditServer.enabled = false;
         this.btnDeleteServer.enabled = false;
 
-        if (guilistextended$iguilistentry != null && !(guilistextended$iguilistentry instanceof ServerListEntryLanScan)) {
+        if (entry != null && !(entry instanceof ServerListEntryLanScan)) {
             this.btnSelectServer.enabled = true;
 
-            if (guilistextended$iguilistentry instanceof ServerListEntryNormal) {
+            if (entry instanceof ServerListEntryNormal) {
                 this.btnEditServer.enabled = true;
                 this.btnDeleteServer.enabled = true;
             }
+            float top = this.rowTop(index);
+            this.list.reveal(top, top + entry.height());
         }
     }
 
@@ -344,22 +436,6 @@ public class GuiMultiplayer extends GuiScreen implements GuiYesNoCallback {
 
     public void setHoveringText(String p_146793_1_) {
         this.hoveringText = p_146793_1_;
-    }
-
-    /**
-     * Called when the mouse is clicked. Args : mouseX, mouseY, clickedButton
-     */
-    protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
-        super.mouseClicked(mouseX, mouseY, mouseButton);
-        this.serverListSelector.mouseClicked(mouseX, mouseY, mouseButton);
-    }
-
-    /**
-     * Called when a mouse button is released.  Args : mouseX, mouseY, releaseButton
-     */
-    protected void mouseReleased(int mouseX, int mouseY, int state) {
-        super.mouseReleased(mouseX, mouseY, state);
-        this.serverListSelector.mouseReleased(mouseX, mouseY, state);
     }
 
     public ServerList getServerList() {
