@@ -1,0 +1,36 @@
+{
+    "targets": [ "final", "models", "halo", "output" ],
+    "passes": [
+        {
+            "name": "chams_glow",
+            "intarget": "final",
+            "outtarget": "output",
+            "uniforms": [
+                { "name": "BlurDir", "values": [ 1.0, 0.0 ] },
+                { "name": "Spread", "values": [ 1.6 ] }
+            ]
+        },
+        {
+            "name": "chams_glow",
+            "intarget": "output",
+            "outtarget": "halo",
+            "uniforms": [
+                { "name": "BlurDir", "values": [ 0.0, 1.0 ] },
+                { "name": "Spread", "values": [ 1.6 ] }
+            ]
+        },
+        {
+            "name": "chams_composite",
+            "intarget": "models",
+            "outtarget": "output",
+            "auxtargets": [
+                { "name": "MaskSampler", "id": "final" },
+                { "name": "HaloSampler", "id": "halo" }
+            ],
+            "uniforms": [
+                { "name": "SurfaceAlpha", "values": [ 0.3 ] },
+                { "name": "HaloAlpha", "values": [ 0.8 ] }
+            ]
+        }
+    ]
+}

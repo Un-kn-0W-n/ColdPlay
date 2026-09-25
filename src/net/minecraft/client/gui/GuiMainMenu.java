@@ -1,78 +1,49 @@
 package net.minecraft.client.gui;
 
-import coldplay.gui.BackgroundShader;
-import coldplay.gui.MenuButton;
+import coldplay.gui.GlassMenuButton;
+import coldplay.gui.GlassScreen;
+import coldplay.gui.GlassShader;
+import coldplay.gui.GlassUi;
+import coldplay.gui.Glass;
+import coldplay.gui.Icons;
 import coldplay.gui.Theme;
-import coldplay.util.RenderUtil;
+import coldplay.util.font.CustomFont;
+import coldplay.util.font.FontRef;
 import coldplay.util.font.Fonts;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.GlStateManager;
-import net.minecraft.client.renderer.OpenGlHelper;
-import net.minecraft.client.resources.I18n;
-import net.minecraft.util.EnumChatFormatting;
-import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.demo.DemoWorldServer;
 import net.minecraft.world.storage.ISaveFormat;
 import net.minecraft.world.storage.WorldInfo;
 import net.optifine.reflect.Reflector;
 import org.apache.commons.io.Charsets;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.lwjglx.opengl.GLContext;
-import pisi.unitedmeows.minecraft.MinecraftInstance;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.URI;
 import java.util.*;
 
-@SuppressWarnings("FieldCanBeLocal")
-public class GuiMainMenu extends GuiScreen implements GuiYesNoCallback {
-    private static final Logger logger = LogManager.getLogger();
+public class GuiMainMenu extends GlassScreen implements GuiYesNoCallback {
     private static final Random RANDOM = new Random();
+    private static final net.minecraft.util.ResourceLocation splashTexts = new net.minecraft.util.ResourceLocation("texts/splashes.txt");
+
+    private static final float CARD_W = 270.0F;
+    private static final float ROW_H = 28.5F;
+    private static final float ROW_GAP = 3.0F;
+    private static final float CHIP_GAP = 4.5F;
+    private static final float TRACKING = 1.35F;
+    private static final float RAIL = 1.5F;
+    private static final FontRef WORDMARK = new FontRef(Fonts.GEIST_SEMIBOLD, 22.5F);
+
     /**
      * The splash message.
      */
     private String splashText;
     private GuiButton buttonResetDemo;
-    /**
-     * The Object object utilized as a thread lock when performing non thread-safe operations
-     */
-    private final Object threadLock = new Object();
-    /**
-     * OpenGL graphics card warning.
-     */
-    private String openGLWarning1;
-    /**
-     * OpenGL graphics card warning.
-     */
-    private String openGLWarning2;
-    /**
-     * Link to the Mojang Support about minimum requirements
-     */
-    private String openGLWarningLink;
-    private static final ResourceLocation splashTexts = new ResourceLocation("texts/splashes.txt");
-    public static final String field_96138_a = "Please click " + EnumChatFormatting.UNDERLINE + "here" + EnumChatFormatting.RESET + " for more information.";
-    private int field_92024_r;
-    private int field_92023_s;
-    private int field_92022_t;
-    private int field_92021_u;
-    private int field_92020_v;
-    private int field_92019_w;
-    private int menuPanelLeft;
-    private int menuPanelTop;
-    private int menuPanelRight;
-    private int menuPanelBottom;
-    private int menuContentX;
-    private int menuContentWidth;
-    private int wordmarkY;
-    private boolean compactLayout;
+    private float clientY;
 
     public GuiMainMenu() {
-        this.openGLWarning2 = field_96138_a;
         this.splashText = "missingno";
         BufferedReader bufferedreader = null;
         try {
@@ -96,12 +67,6 @@ public class GuiMainMenu extends GuiScreen implements GuiYesNoCallback {
             } catch (final IOException ignored) {
             }
         }
-        this.openGLWarning1 = "";
-        if (!GLContext.getCapabilities().OpenGL20 && !OpenGlHelper.areShadersSupported()) {
-            this.openGLWarning1 = I18n.format("title.oldgl1");
-            this.openGLWarning2 = I18n.format("title.oldgl2");
-            this.openGLWarningLink = "https://help.mojang.com/customer/portal/articles/325948?ref=game";
-        }
     }
 
     /**
@@ -123,91 +88,40 @@ public class GuiMainMenu extends GuiScreen implements GuiYesNoCallback {
         if (calendar.get(Calendar.MONTH) + 1 == 12 && calendar.get(Calendar.DATE) == 24) this.splashText = "Merry X-mas!";
         else if (calendar.get(Calendar.MONTH) + 1 == 1 && calendar.get(Calendar.DATE) == 1) this.splashText = "Happy new year!";
         else if (calendar.get(Calendar.MONTH) + 1 == 10 && calendar.get(Calendar.DATE) == 31) this.splashText = "OOoooOOOoooo! Spooky!";
-        this.compactLayout = this.width < 640 || this.height < 360;
         final boolean hasMods = Reflector.GuiModList_Constructor.exists();
-        final int buttonHeight = this.compactLayout ? 19 : 24;
-        final int gap = this.compactLayout ? 4 : 6;
-        final int primaryCount = this.mc.isDemo() ? 2 : 3 + (hasMods ? 1 : 0);
-        final int requiredHeight = (this.compactLayout ? 76 : 112)
-                + primaryCount * (buttonHeight + gap) + 2 * (buttonHeight + gap) + 14;
-        // The panel is clamped to the window, not to the buttons. On a window shorter than
-        // requiredHeight the button column overflows the silhouette rather than scrolling.
-        final int panelHeight = Math.min(this.height - 12,
-                this.compactLayout ? Math.max(218, requiredHeight) : Math.max(340, requiredHeight));
-        final int panelWidth = Math.min(this.compactLayout ? 280 : 300, this.width - 24);
-        this.menuPanelLeft = (this.width - panelWidth) / 2;
-        this.menuPanelTop = (this.height - panelHeight) / 2;
-        this.menuPanelRight = this.menuPanelLeft + panelWidth;
-        this.menuPanelBottom = this.menuPanelTop + panelHeight;
-        this.menuContentX = this.menuPanelLeft + 14;
-        this.menuContentWidth = panelWidth - 28;
-        this.wordmarkY = this.menuPanelTop + (this.compactLayout ? 30 : 50);
+        final int rows = this.mc.isDemo() ? 2 : 3 + (hasMods ? 1 : 0);
+        this.setCard(CARD_W, 200.25F + rows * (ROW_H + ROW_GAP) - ROW_GAP);
 
-        final int step = buttonHeight + gap;
-        int nextY = this.menuPanelTop + (this.compactLayout ? 76 : 112);
-        nextY = this.mc.isDemo()
-                ? this.addDemoButtons(nextY, step, buttonHeight)
-                : this.addSingleplayerMultiplayerButtons(nextY, step, buttonHeight, hasMods);
-        nextY += gap;
-
-        final int halfWidth = (this.menuContentWidth - gap) / 2;
-        this.buttonList.add(new MenuButton(0, this.menuContentX, nextY, halfWidth, buttonHeight,
-                I18n.format("menu.options")));
-        this.buttonList.add(new MenuButton(5, this.menuContentX + halfWidth + gap, nextY,
-                this.menuContentWidth - halfWidth - gap, buttonHeight,
-                I18n.format("options.language")));
-        nextY += step;
-        this.buttonList.add(new MenuButton(20, this.menuContentX, nextY, halfWidth, buttonHeight,
-                "Change Log"));
-        this.buttonList.add(new MenuButton(4, this.menuContentX + halfWidth + gap, nextY,
-                this.menuContentWidth - halfWidth - gap, buttonHeight,
-                I18n.format("menu.quit"), true));
-        synchronized (this.threadLock) {
-            this.field_92023_s = this.fontRendererObj.getStringWidth(this.openGLWarning1);
-            this.field_92024_r = this.fontRendererObj.getStringWidth(this.openGLWarning2);
-            final int k = Math.max(this.field_92023_s, this.field_92024_r);
-            this.field_92022_t = (this.width - k) / 2;
-            this.field_92021_u = this.buttonList.get(0).yPosition - 24;
-            this.field_92020_v = this.field_92022_t + k;
-            this.field_92019_w = this.field_92021_u + 24;
+        final float x = this.cardX + PAD;
+        final float w = CARD_W - PAD * 2.0F;
+        float y = this.cardY + 102.75F;
+        if (this.mc.isDemo()) {
+            y = this.addRow(11, "Play Demo World", Icons.Icon.USER, y, false);
+            y = this.addRow(12, "Reset Demo World", Icons.Icon.CLOSE, y, true);
+            this.buttonResetDemo = this.buttonList.get(this.buttonList.size() - 1);
+            final WorldInfo worldinfo = this.mc.getSaveLoader().getWorldInfo("Demo_World");
+            if (worldinfo == null) this.buttonResetDemo.enabled = false;
+        } else {
+            y = this.addRow(1, "Singleplayer", Icons.Icon.USER, y, false);
+            y = this.addRow(2, "Multiplayer", Icons.Icon.SERVERS, y, false);
+            y = this.addRow(21, "Alt Manager", Icons.Icon.USERS, y, false);
+            if (hasMods) y = this.addRow(6, "Mods", Icons.Icon.LAYOUT, y, false);
         }
+        this.clientY = y - ROW_GAP + 12.0F;
+        final float chipY = this.clientY + 15.0F;
+        final float half = (w - CHIP_GAP) / 2.0F;
+        final float h = GlassUi.CHIP_H;
+        final GlassMenuButton.Style chip = GlassMenuButton.Style.CHIP;
+        this.buttonList.add(new GlassMenuButton(0, x, chipY, half, h, "Options", Icons.Icon.SLIDERS, chip, false));
+        this.buttonList.add(new GlassMenuButton(5, x + half + CHIP_GAP, chipY, half, h, "Language", Icons.Icon.GLOBE, chip, false));
+        this.buttonList.add(new GlassMenuButton(20, x, chipY + h + CHIP_GAP, half, h, "Change Log", Icons.Icon.DOCUMENT, chip, false));
+        this.buttonList.add(new GlassMenuButton(4, x + half + CHIP_GAP, chipY + h + CHIP_GAP, half, h, "Quit Game", Icons.Icon.POWER, chip, true));
     }
 
-    /**
-     * Adds Singleplayer and Multiplayer buttons on Main Menu for players who have bought the game.
-     */
-    private int addSingleplayerMultiplayerButtons(final int startY, final int step,
-                                                   final int buttonHeight, final boolean hasMods) {
-        int y = startY;
-        this.buttonList.add(new MenuButton(1, this.menuContentX, y, this.menuContentWidth, buttonHeight,
-                I18n.format("menu.singleplayer")));
-        y += step;
-        this.buttonList.add(new MenuButton(2, this.menuContentX, y, this.menuContentWidth, buttonHeight,
-                I18n.format("menu.multiplayer")));
-        y += step;
-        this.buttonList.add(new MenuButton(21, this.menuContentX, y, this.menuContentWidth, buttonHeight,
-                "Alt Manager"));
-        y += step;
-        if (hasMods) {
-            this.buttonList.add(new MenuButton(6, this.menuContentX, y, this.menuContentWidth, buttonHeight,
-                    I18n.format("fml.menu.mods")));
-            y += step;
-        }
-        return y;
-    }
-
-    /**
-     * Adds Demo buttons on Main Menu for players who are playing Demo.
-     */
-    private int addDemoButtons(final int startY, final int step, final int buttonHeight) {
-        this.buttonList.add(new MenuButton(11, this.menuContentX, startY, this.menuContentWidth, buttonHeight,
-                I18n.format("menu.playdemo")));
-        this.buttonList.add(this.buttonResetDemo = new MenuButton(12, this.menuContentX, startY + step,
-                this.menuContentWidth, buttonHeight, I18n.format("menu.resetdemo"), true));
-        final ISaveFormat isaveformat = this.mc.getSaveLoader();
-        final WorldInfo worldinfo = isaveformat.getWorldInfo("Demo_World");
-        if (worldinfo == null) this.buttonResetDemo.enabled = false;
-        return startY + step * 2;
+    private float addRow(final int id, final String label, final Icons.Icon icon, final float y, final boolean danger) {
+        this.buttonList.add(new GlassMenuButton(id, this.cardX + PAD, y, CARD_W - PAD * 2.0F, ROW_H, label, icon,
+                GlassMenuButton.Style.ROW, danger));
+        return y + ROW_H + ROW_GAP;
     }
 
     /**
@@ -243,49 +157,68 @@ public class GuiMainMenu extends GuiScreen implements GuiYesNoCallback {
             final ISaveFormat isaveformat = this.mc.getSaveLoader();
             isaveformat.flushCache();
             isaveformat.deleteWorldDirectory("Demo_World");
-            this.mc.displayGuiScreen(this);
-        } else if (id == 13) {
-            if (result) try {
-                final Class<?> oclass = Class.forName("java.awt.Desktop");
-                final Object object = oclass.getMethod("getDesktop").invoke(null);
-                oclass.getMethod("browse", URI.class).invoke(object, new URI(this.openGLWarningLink));
-            } catch (final Throwable throwable) {
-                logger.error("Couldn't open link", throwable);
-            }
-            this.mc.displayGuiScreen(this);
         }
+        this.mc.displayGuiScreen(this);
     }
 
-    /**
-     * Draws the screen and all the components in it. Args : mouseX, mouseY, renderPartialTicks
-     */
     @Override
-    public void drawScreen(final int mouseX, final int mouseY, final float partialTicks) {
-        BackgroundShader.draw(this.width, this.height, this.mc.displayWidth, this.mc.displayHeight);
-        GlStateManager.disableDepth();
-        GlStateManager.enableAlpha();
-        Fonts.load();
+    protected void drawCard(final int mouseX, final int mouseY, final float partialTicks) {
+        final float center = this.cardX + CARD_W / 2.0F;
+        final CustomFont mark = WORDMARK.get();
+        final float coldW = mark.getStringWidth("COLD", TRACKING);
+        final float playW = mark.getStringWidth("PLAY", TRACKING);
+        final float left = center - (coldW + 1.5F + playW) / 2.0F;
+        final float playX = left + coldW + 1.5F;
+        final float bottom = this.cardY + 43.5F;
+        // glyphs sit centered in a 24 px line box on the row's bottom edge
+        final float textY = bottom - 12.0F - mark.getHeight() / 2.0F;
+        mark.drawString("COLD", left, textY, GlassUi.ICE, TRACKING);
+        mark.drawString("PLAY", playX, textY, GlassUi.FROST, TRACKING);
+        final float railEnd = playX + playW - 2.25F;
+        GlassShader.rect(playX, bottom + 3.0F, railEnd - playX, RAIL, 0.0F, GlassUi.FROST, GlassUi.FROST);
+        GlassShader.rect(railEnd - RAIL, bottom - 0.75F, RAIL, 5.25F, 0.0F, GlassUi.ICE, GlassUi.ICE);
+        drawGlint(playX, playX + playW, bottom + 3.0F);
 
-        final int panelW = this.menuPanelRight - this.menuPanelLeft;
-        final int panelH = this.menuPanelBottom - this.menuPanelTop;
-        RenderUtil.rect(this.menuPanelLeft, this.menuPanelTop, panelW, panelH, Theme.BODY);
-        Theme.contour(this.menuPanelLeft, this.menuPanelTop, panelW, panelH);
+        final CustomFont body = GlassUi.BODY.get();
+        body.drawCentered(body.trimToWidth(this.splashText, Math.round(CARD_W - PAD * 2.0F), "..."),
+                center, this.cardY + 51.0F + (12.0F - body.getHeight()) / 2.0F, GlassUi.DIM);
+        GlassUi.divider(this.cardX + PAD, this.cardY + 76.5F, CARD_W - PAD * 2.0F);
+        GlassUi.section("Play", this.cardX + PAD, this.cardY + 87.75F);
+        GlassUi.section("Client", this.cardX + PAD, this.clientY);
+        this.drawButtons(mouseX, mouseY, partialTicks);
+    }
 
-        BackgroundShader.drawWordmark((this.menuPanelLeft + this.menuPanelRight) / 2.0F,
-                this.wordmarkY, this.compactLayout ? 0.68F : 0.92F);
-        if (Fonts.list != null) {
-            final String eyebrow = "COLDPLAY CLIENT";
-            Fonts.list.drawString(eyebrow,
-                    (this.menuPanelLeft + this.menuPanelRight - Fonts.list.getStringWidth(eyebrow)) / 2.0F,
-                    this.wordmarkY + (this.compactLayout ? 23 : 32), Theme.TEXT_MUTE);
-            Fonts.list.drawCentered(
-                    Fonts.list.trimToWidth(this.splashText, Math.max(40, this.menuContentWidth - 12), "..."),
-                    (this.menuPanelLeft + this.menuPanelRight) / 2f,
-                    this.wordmarkY + (this.compactLayout ? 36 : 47), Theme.TEXT_DIM);
+    // a light passes along the rail every six seconds
+    private static void drawGlint(final float left, final float right, final float y) {
+        final float p = Minecraft.getSystemTime() % 6000L / 6000.0F;
+        if (p < 0.62F || p > 0.86F) {
+            return;
         }
+        final float from = left - 22.5F + 94.5F * ease((p - 0.62F) / 0.24F);
+        final float a = p < 0.7F ? ease((p - 0.62F) / 0.08F) : 1.0F - ease((p - 0.7F) / 0.16F);
+        ramp(from, from + 8.25F, 0.0F, a, left, right, y);
+        ramp(from + 8.25F, from + 16.5F, a, 0.0F, left, right, y);
+    }
 
-        String s = MinecraftInstance.NAME;
-        if (this.mc.isDemo()) s = s + " Demo";
+    private static void ramp(final float x0, final float x1, final float a0, final float a1,
+                             final float left, final float right, final float y) {
+        final float c0 = Math.max(x0, left);
+        final float c1 = Math.min(x1, right);
+        if (c1 <= c0) {
+            return;
+        }
+        final float s0 = a0 + (a1 - a0) * (c0 - x0) / (x1 - x0);
+        final float s1 = a0 + (a1 - a0) * (c1 - x0) / (x1 - x0);
+        GlassShader.rect(c0, y, c1 - c0, RAIL, 0.0F,
+                Theme.withAlpha(0xFFFFFFFF, Math.round(s0 * 255)), Theme.withAlpha(0xFFFFFFFF, Math.round(s1 * 255)));
+    }
+
+    private static float ease(final float t) {
+        return t * t * (3.0F - 2.0F * t);
+    }
+
+    @Override
+    protected void drawFooter() {
         if (Reflector.FMLCommonHandler_getBrandings.exists()) {
             final Object object = Reflector.call(Reflector.FMLCommonHandler_instance);
             //noinspection unchecked
@@ -297,34 +230,18 @@ public class GuiMainMenu extends GuiScreen implements GuiYesNoCallback {
             }
             if (Reflector.ForgeHooksClient_renderMainMenu.exists())
                 Reflector.call(Reflector.ForgeHooksClient_renderMainMenu, this, this.fontRendererObj, this.width, this.height);
-        } else if (Fonts.list != null) {
-            Fonts.list.drawString(s.toUpperCase(Locale.ROOT), 5, this.height - Fonts.list.getHeight() - 5, Theme.TEXT_MUTE);
-        } else this.drawString(this.fontRendererObj, s, 2, this.height - 10, Theme.TEXT_MUTE);
-        // Keybind hint for new users; skipped when a tiny window leaves no room under the panel.
-        if (Fonts.list != null && this.height - Fonts.list.getHeight() - 5 > this.menuPanelBottom + 2) {
-            Fonts.list.drawCentered("Press Right Shift in-game to open ColdPlay",
-                    this.width / 2f, this.height - Fonts.list.getHeight() - 5, Theme.TEXT_MUTE);
+        } else {
+            this.versionChip();
         }
-        if (this.openGLWarning1 != null && this.openGLWarning1.length() > 0) {
-            drawRect(this.field_92022_t - 2, this.field_92021_u - 2, this.field_92020_v + 2, this.field_92019_w - 1, 1428160512);
-            this.drawString(this.fontRendererObj, this.openGLWarning1, this.field_92022_t, this.field_92021_u, -1);
-            this.drawString(this.fontRendererObj, this.openGLWarning2, (this.width - this.field_92024_r) / 2, this.buttonList.get(0).yPosition - 12, -1);
-        }
-        super.drawScreen(mouseX, mouseY, partialTicks);
-    }
-
-    /**
-     * Called when the mouse is clicked. Args : mouseX, mouseY, clickedButton
-     */
-    @Override
-    protected void mouseClicked(final int mouseX, final int mouseY, final int mouseButton) throws IOException {
-        super.mouseClicked(mouseX, mouseY, mouseButton);
-        synchronized (this.threadLock) {
-            if (this.openGLWarning1.length() > 0 && mouseX >= this.field_92022_t && mouseX <= this.field_92020_v && mouseY >= this.field_92021_u && mouseY <= this.field_92019_w) {
-                final GuiConfirmOpenLink guiconfirmopenlink = new GuiConfirmOpenLink(this, this.openGLWarningLink, 13, true);
-                guiconfirmopenlink.disableSecurityWarning();
-                this.mc.displayGuiScreen(guiconfirmopenlink);
-            }
-        }
+        final CustomFont body = GlassUi.BODY.get();
+        final String text = "Open ColdPlay in-game";
+        final String key = "Right Shift";
+        final float keyW = GlassUi.kbdWidth(key);
+        final float w = 9.0F + body.getStringWidth(text) + 7.5F + keyW + 4.5F;
+        final float x = this.width - 15.0F - w;
+        final float y = this.height - 37.5F;
+        GlassShader.panel(x, y, w, 22.5F, 6.0F, Glass.SMOKE);
+        body.drawString(text, x + 9.0F, y + (22.5F - body.getHeight()) / 2.0F, 0xB3FFFFFF);
+        GlassUi.kbd(x + w - 4.5F - keyW, y + 3.75F, key);
     }
 }

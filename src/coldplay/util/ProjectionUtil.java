@@ -31,6 +31,57 @@ public final class ProjectionUtil {
         return new Point(scratch.get(0), scratch.get(1), scratch.get(2));
     }
 
+    /**
+     * The part of the camera-relative segment from a to b that lies in front of the near plane, in framebuffer
+     * px with y down, as {ax, ay, bx, by}. False when all of it is behind. The ends may still be off screen.
+     */
+    public static boolean projectSegment(double ax, double ay, double az, double bx, double by, double bz,
+                                         FloatBuffer modelview, FloatBuffer projection, IntBuffer viewport,
+                                         float[] out) {
+        double[] a = clip(ax, ay, az, modelview, projection);
+        double[] b = clip(bx, by, bz, modelview, projection);
+        // in front of the near plane when z >= -w
+        double da = a[2] + a[3], db = b[2] + b[3];
+        if (da < 0.0 && db < 0.0) {
+            return false;
+        }
+        if (da < 0.0) {
+            a = lerp(a, b, da / (da - db));
+        } else if (db < 0.0) {
+            b = lerp(b, a, db / (db - da));
+        }
+        toScreen(a, viewport, out, 0);
+        toScreen(b, viewport, out, 2);
+        return true;
+    }
+
+    private static double[] clip(double x, double y, double z, FloatBuffer modelview, FloatBuffer projection) {
+        double[] eye = new double[4];
+        double[] clip = new double[4];
+        for (int row = 0; row < 4; row++) {
+            eye[row] = modelview.get(row) * x + modelview.get(4 + row) * y + modelview.get(8 + row) * z + modelview.get(12 + row);
+        }
+        for (int row = 0; row < 4; row++) {
+            clip[row] = projection.get(row) * eye[0] + projection.get(4 + row) * eye[1]
+                    + projection.get(8 + row) * eye[2] + projection.get(12 + row) * eye[3];
+        }
+        return clip;
+    }
+
+    private static double[] lerp(double[] from, double[] to, double t) {
+        double[] out = new double[4];
+        for (int i = 0; i < 4; i++) {
+            out[i] = from[i] + (to[i] - from[i]) * t;
+        }
+        return out;
+    }
+
+    private static void toScreen(double[] clip, IntBuffer viewport, float[] out, int offset) {
+        double w = Math.max(clip[3], 1.0E-6);
+        out[offset] = (float) (viewport.get(0) + (clip[0] / w + 1.0) / 2.0 * viewport.get(2));
+        out[offset + 1] = (float) (viewport.get(3) - (viewport.get(1) + (clip[1] / w + 1.0) / 2.0 * viewport.get(3)));
+    }
+
     /** Projects all eight corners once. */
     public static AabbProjection projectAabb(AxisAlignedBB box,
                                              double viewerX, double viewerY, double viewerZ,

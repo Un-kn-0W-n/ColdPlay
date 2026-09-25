@@ -4,6 +4,8 @@ uniform sampler2D DiffuseSampler;
 uniform sampler2D MaskSampler;
 uniform sampler2D HaloSampler;
 uniform vec2 InSize;
+uniform float SurfaceAlpha;
+uniform float HaloAlpha;
 varying vec2 texCoord;
 varying vec2 oneTexel;
 
@@ -12,6 +14,7 @@ void main() {
     vec4 mask = texture2D(MaskSampler, texCoord);
     vec4 halo = texture2D(HaloSampler, texCoord);
     float coverage = max(model.a, mask.a);
+    model.a *= SurfaceAlpha;
     float edge = 0.0;
     vec3 edgeColor = vec3(0.0);
     float scale = clamp(InSize.y / 720.0, 0.75, 2.0);
@@ -28,7 +31,7 @@ void main() {
     }
     // Keep the broad glow outside the model; a bright narrow rim holds small details together.
     float rimAlpha = edge * (1.0 - coverage) * 0.9;
-    float haloAlpha = smoothstep(0.0, 0.65, halo.a) * (1.0 - coverage) * 0.55;
+    float haloAlpha = smoothstep(0.0, 0.65, halo.a) * (1.0 - coverage) * HaloAlpha;
     float outerAlpha = rimAlpha + haloAlpha * (1.0 - rimAlpha);
     vec3 outer = mix(halo.rgb, vec3(1.0), 0.08) * haloAlpha * (1.0 - rimAlpha)
                + mix(edgeColor, vec3(1.0), 0.18) * rimAlpha;

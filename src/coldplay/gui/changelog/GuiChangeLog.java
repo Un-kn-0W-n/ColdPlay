@@ -1,13 +1,13 @@
 package coldplay.gui.changelog;
 
-import coldplay.gui.BackgroundShader;
-import coldplay.gui.CenteredPanelLayout;
-import coldplay.gui.StyledButton;
-import coldplay.gui.Theme;
-import coldplay.util.RenderUtil;
+import coldplay.ColdPlay;
+import coldplay.gui.GlassList;
+import coldplay.gui.GlassScreen;
+import coldplay.gui.GlassShader;
+import coldplay.gui.GlassUi;
 import coldplay.util.font.CustomFont;
-import coldplay.util.font.Fonts;
 
+import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 
 import org.lwjglx.input.Keyboard;
@@ -15,7 +15,7 @@ import org.lwjglx.input.Keyboard;
 import java.io.IOException;
 import java.util.List;
 
-public class GuiChangeLog extends GuiScreen {
+public class GuiChangeLog extends GlassScreen {
 
     /** Newest first; each section is {header, bullet, ...}. */
     private static final String[][] LOG = {
@@ -57,14 +57,10 @@ public class GuiChangeLog extends GuiScreen {
                     "KillAura Rotation speed and Raytrace methods and render"},
     };
 
-    private static final int PAD = 14;
+    private static final float INSET = 10.5F;
 
     private final GuiScreen parentScreen;
-
-    private int left, top, bottom, panelW;
-    private int titleY;
-    private int contentX, contentY, contentW, contentBottom;
-    private int backX, backY, backW, backH;
+    private final GlassList list = new GlassList();
 
     public GuiChangeLog(final GuiScreen parentScreen) {
         this.parentScreen = parentScreen;
@@ -72,99 +68,79 @@ public class GuiChangeLog extends GuiScreen {
 
     @Override
     public void initGui() {
-        Fonts.load();
-    }
-
-    private void updateLayout() {
-        CenteredPanelLayout panel = CenteredPanelLayout.create(this.width, this.height, 360, 20, 24);
-        this.left = panel.getLeft();
-        this.top = panel.getTop();
-        this.bottom = panel.getBottom();
-        this.panelW = panel.getWidth();
-
-        this.titleY = this.top + 12;
-
-        CenteredPanelLayout.Rect back = panel.bottomButton(PAD, 20, 8);
-        this.backX = back.x;
-        this.backY = back.y;
-        this.backW = back.width;
-        this.backH = back.height;
-
-        this.contentX = this.left + PAD;
-        this.contentW = this.panelW - PAD * 2;
-        this.contentY = this.titleY + 24;
-        this.contentBottom = this.backY - 8;
+        this.setCard(480.0F, 363.0F);
+        this.list.place(this.cardX + PAD, this.cardY + 55.5F, this.cardW - PAD * 2.0F, 292.5F);
+        this.addBack(0);
     }
 
     @Override
-    public void drawScreen(final int mouseX, final int mouseY, final float partialTicks) {
-        Fonts.load();
-        this.updateLayout();
-
-        BackgroundShader.draw(this.width, this.height, this.mc.displayWidth, this.mc.displayHeight);
-        RenderUtil.rect(this.left, this.top, this.panelW, this.bottom - this.top, Theme.BODY);
-        Theme.contour(this.left, this.top, this.panelW, this.bottom - this.top);
-
-        final CustomFont font = Fonts.medium;
-
-        BackgroundShader.drawSectionTitle("ChangeLog", this.width / 2f, this.titleY);
-
-        RenderUtil.drawBorderedRect(this.contentX, this.contentY, this.contentX + this.contentW,
-                this.contentBottom, Theme.WELL, Theme.SEP);
-
-        if (font != null) {
-            if (LOG.length == 0) {
-                final int contentH = this.contentBottom - this.contentY;
-                font.drawCentered("No entries yet", this.width / 2f,
-                        this.contentY + contentH / 2f - font.getHeight() / 2f, Theme.TEXT_MUTE);
-            } else {
-                drawEntries(font);
-            }
-        }
-
-        StyledButton.draw(font, "Back", this.backX, this.backY, this.backW, this.backH,
-                mouseX, mouseY, true, Theme.WELL, Theme.TEXT);
-    }
-
-    private void drawEntries(final CustomFont font) {
-        final int innerX = this.contentX + 10;
-        final int innerW = this.contentW - 20;
-        final int bulletIndent = font.getStringWidth("- ");
-        final int lineH = font.getHeight();
-        final int maxY = this.contentBottom - 8 - lineH;
-        // TODO: add wheel scrolling; sections past the box bottom are clipped
-        float y = this.contentY + 8;
-        for (final String[] section : LOG) {
-            if (y > maxY) {
-                return;
-            }
-            font.drawString(section[0], innerX, y, Theme.TEXT);
-            y += lineH + 4;
-            for (int i = 1; i < section.length; i++) {
-                final List<String> lines = font.wrapToWidth(section[i], innerW - bulletIndent);
-                for (int l = 0; l < lines.size(); l++) {
-                    if (y > maxY) {
-                        return;
-                    }
-                    if (l == 0) {
-                        font.drawString("-", innerX, y, Theme.TEXT_DIM);
-                    }
-                    font.drawString(lines.get(l), innerX + bulletIndent, y, Theme.TEXT_DIM);
-                    y += lineH + 2;
-                }
-            }
-            y += 10;
-        }
-    }
-
-    @Override
-    protected void mouseClicked(final int mouseX, final int mouseY, final int mouseButton) throws IOException {
-        if (mouseButton != 0) {
-            return;
-        }
-        if (RenderUtil.hovered(mouseX, mouseY, this.backX, this.backY, this.backW, this.backH)) {
+    protected void actionPerformed(final GuiButton button) {
+        if (button.id == 0) {
             this.mc.displayGuiScreen(this.parentScreen);
         }
+    }
+
+    @Override
+    protected void drawCard(final int mouseX, final int mouseY, final float partialTicks) {
+        this.drawHeader("Client", "Change Log");
+        final CustomFont mono = GlassUi.MONO.get();
+        final String current = "v" + ColdPlay.VERSION;
+        mono.drawString(current, this.cardX + this.cardW - PAD - mono.getStringWidth(current),
+                this.cardY + PAD_TOP + (27.0F - mono.getHeight()) / 2.0F, 0x80FFFFFF);
+
+        GlassUi.well(this.list.x, this.list.y, this.list.w, this.list.h);
+        this.list.setContent(this.drawLog(false));
+        this.clip(this.list.x, this.list.y, this.list.w, this.list.h);
+        this.drawLog(true);
+        this.unclip();
+        this.list.drawScrollbar();
+        this.drawButtons(mouseX, mouseY, partialTicks);
+    }
+
+    /** Lays the log out from the list top and returns its height; draws it too when asked. */
+    private float drawLog(final boolean draw) {
+        final CustomFont title = GlassUi.ROW.get();
+        final CustomFont body = GlassUi.BODY.get();
+        final float x = this.list.x + INSET;
+        final float w = this.list.w - INSET * 2.0F - 6.0F;
+        final float lineH = body.getHeight() + 3.0F;
+        float y = this.list.top() + 12.0F;
+        for (int s = 0; s < LOG.length; s++) {
+            final String[] section = LOG[s];
+            if (s > 0) {
+                if (draw) {
+                    GlassUi.divider(x, y, w);
+                }
+                y += 12.0F;
+            }
+            if (draw) {
+                title.drawString(section[0], x, y + (12.0F - title.getHeight()) / 2.0F, GlassUi.ICE);
+                if (s == 0) {
+                    GlassUi.badge(x + title.getStringWidth(section[0]) + 7.5F, y - 1.5F, "Latest", 0x1F84D2E3, GlassUi.FROST);
+                }
+            }
+            y += 12.0F + 6.0F;
+            for (int i = 1; i < section.length; i++) {
+                final List<String> lines = body.wrapToWidth(section[i], Math.round(w - 12.0F));
+                for (int l = 0; l < lines.size(); l++) {
+                    if (draw) {
+                        if (l == 0) {
+                            GlassShader.rect(x + 1.5F, y + body.getHeight() / 2.0F - 1.5F, 3.0F, 3.0F, 1.5F, 0x9984D2E3, 0x9984D2E3);
+                        }
+                        body.drawString(lines.get(l), x + 12.0F, y, 0xB3FFFFFF);
+                    }
+                    y += lineH;
+                }
+                y += 1.5F;
+            }
+            y += 4.5F;
+        }
+        return y - this.list.top();
+    }
+
+    @Override
+    protected void cardScrolled(final int mouseX, final int mouseY, final int wheel) {
+        this.list.wheel(wheel, 30.0F);
     }
 
     @Override

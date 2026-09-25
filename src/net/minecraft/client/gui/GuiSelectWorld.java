@@ -1,8 +1,12 @@
 package net.minecraft.client.gui;
 
-import coldplay.gui.BackgroundShader;
-import coldplay.gui.MenuButton;
-import coldplay.util.font.Fonts;
+import coldplay.gui.GlassList;
+import coldplay.gui.GlassMenuButton;
+import coldplay.gui.GlassScreen;
+import coldplay.gui.GlassShader;
+import coldplay.gui.GlassUi;
+import coldplay.gui.Icons;
+import coldplay.util.font.CustomFont;
 import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -11,8 +15,6 @@ import java.util.Date;
 import net.minecraft.client.AnvilConverterException;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.I18n;
-import net.minecraft.client.renderer.Tessellator;
-import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.world.WorldSettings;
 import net.minecraft.world.storage.ISaveFormat;
 import net.minecraft.world.storage.ISaveHandler;
@@ -22,21 +24,21 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class GuiSelectWorld extends GuiScreen implements GuiYesNoCallback
+public class GuiSelectWorld extends GlassScreen implements GuiYesNoCallback
 {
     private static final Logger logger = LogManager.getLogger();
-    private final DateFormat field_146633_h = new SimpleDateFormat();
+    private static final float ROW_H = 42.0F;
+    private static final float ROW_STEP = 45.0F;
+    private final DateFormat dateFormat = new SimpleDateFormat();
     protected GuiScreen parentScreen;
-    protected String screenTitle = "Select world";
-    private boolean field_146634_i;
+    private boolean launching;
 
     /** The list index of the currently-selected world */
-    private int selectedIndex;
-    private java.util.List<SaveFormatComparator> field_146639_s;
-    private List availableWorlds;
-    private String field_146637_u;
-    private String field_146636_v;
-    private String[] field_146635_w = new String[4];
+    private int selectedIndex = -1;
+    private java.util.List<SaveFormatComparator> saves;
+    private final GlassList list = new GlassList();
+    private int lastClicked = -1;
+    private long lastClickTime;
     private boolean confirmingDelete;
     private GuiButton deleteButton;
     private GuiButton selectButton;
@@ -54,8 +56,6 @@ public class GuiSelectWorld extends GuiScreen implements GuiYesNoCallback
      */
     public void initGui()
     {
-        this.screenTitle = I18n.format("selectWorld.title", new Object[0]);
-
         try
         {
             this.loadLevelList();
@@ -67,24 +67,29 @@ public class GuiSelectWorld extends GuiScreen implements GuiYesNoCallback
             return;
         }
 
-        this.field_146637_u = I18n.format("selectWorld.world", new Object[0]);
-        this.field_146636_v = I18n.format("selectWorld.conversion", new Object[0]);
-        this.field_146635_w[WorldSettings.GameType.SURVIVAL.getID()] = I18n.format("gameMode.survival", new Object[0]);
-        this.field_146635_w[WorldSettings.GameType.CREATIVE.getID()] = I18n.format("gameMode.creative", new Object[0]);
-        this.field_146635_w[WorldSettings.GameType.ADVENTURE.getID()] = I18n.format("gameMode.adventure", new Object[0]);
-        this.field_146635_w[WorldSettings.GameType.SPECTATOR.getID()] = I18n.format("gameMode.spectator", new Object[0]);
-        this.availableWorlds = new List(this.mc);
-        this.availableWorlds.registerScrollButtons(4, 5);
-        this.addWorldSelectionButtons();
+        this.setCard(540.0F, 393.0F);
+        this.list.place(this.cardX + PAD, this.cardY + 55.5F, 510.0F, 285.0F);
+        this.addBack(0);
+        float y = this.cardY + 352.5F;
+        float x = this.cardX + PAD;
+        this.buttonList.add(this.renameButton = this.chip(6, x, y, "Rename", Icons.Icon.PENCIL, false));
+        x = ((GlassMenuButton) this.renameButton).right() + 6.0F;
+        this.buttonList.add(this.recreateButton = this.chip(7, x, y, "Re-Create", Icons.Icon.REFRESH, false));
+        x = ((GlassMenuButton) this.recreateButton).right() + 6.0F;
+        this.buttonList.add(this.deleteButton = this.chip(2, x, y, "Delete", Icons.Icon.TRASH, true));
+        float playW = GlassUi.chipWidth("Play Selected World", Icons.Icon.PLAY, true);
+        float right = this.cardX + this.cardW - PAD;
+        this.buttonList.add(this.selectButton = new GlassMenuButton(1, right - playW, y, playW, GlassUi.CHIP_H,
+                "Play Selected World", Icons.Icon.PLAY, GlassMenuButton.Style.PRIMARY, false));
+        float createW = GlassUi.chipWidth("Create New World", Icons.Icon.PLUS, false);
+        this.buttonList.add(this.chip(3, right - playW - 6.0F - createW, y, "Create New World", Icons.Icon.PLUS, false));
+        this.select(this.selectedIndex);
     }
 
-    /**
-     * Handles mouse input.
-     */
-    public void handleMouseInput() throws IOException
+    private GlassMenuButton chip(int id, float x, float y, String label, Icons.Icon icon, boolean danger)
     {
-        super.handleMouseInput();
-        this.availableWorlds.handleMouseInput();
+        return new GlassMenuButton(id, x, y, GlassUi.chipWidth(label, icon, false), GlassUi.CHIP_H, label, icon,
+                GlassMenuButton.Style.CHIP_FIT, danger);
     }
 
     /**
@@ -93,19 +98,19 @@ public class GuiSelectWorld extends GuiScreen implements GuiYesNoCallback
     private void loadLevelList() throws AnvilConverterException
     {
         ISaveFormat isaveformat = this.mc.getSaveLoader();
-        this.field_146639_s = isaveformat.getSaveList();
-        Collections.sort(this.field_146639_s);
+        this.saves = isaveformat.getSaveList();
+        Collections.sort(this.saves);
         this.selectedIndex = -1;
     }
 
     protected String func_146621_a(int p_146621_1_)
     {
-        return ((SaveFormatComparator)this.field_146639_s.get(p_146621_1_)).getFileName();
+        return this.saves.get(p_146621_1_).getFileName();
     }
 
     protected String func_146614_d(int p_146614_1_)
     {
-        String s = ((SaveFormatComparator)this.field_146639_s.get(p_146614_1_)).getDisplayName();
+        String s = this.saves.get(p_146614_1_).getDisplayName();
 
         if (StringUtils.isEmpty(s))
         {
@@ -115,24 +120,14 @@ public class GuiSelectWorld extends GuiScreen implements GuiYesNoCallback
         return s;
     }
 
-    public void addWorldSelectionButtons()
+    private void select(int index)
     {
-        this.buttonList.add(this.selectButton = new MenuButton(1, this.width / 2 - 154, this.height - 52, 150, 20,
-                I18n.format("selectWorld.select", new Object[0])));
-        this.buttonList.add(new MenuButton(3, this.width / 2 + 4, this.height - 52, 150, 20,
-                I18n.format("selectWorld.create", new Object[0])));
-        this.buttonList.add(this.renameButton = new MenuButton(6, this.width / 2 - 154, this.height - 28, 72, 20,
-                I18n.format("selectWorld.rename", new Object[0])));
-        this.buttonList.add(this.deleteButton = new MenuButton(2, this.width / 2 - 76, this.height - 28, 72, 20,
-                I18n.format("selectWorld.delete", new Object[0]), true));
-        this.buttonList.add(this.recreateButton = new MenuButton(7, this.width / 2 + 4, this.height - 28, 72, 20,
-                I18n.format("selectWorld.recreate", new Object[0])));
-        this.buttonList.add(new MenuButton(0, this.width / 2 + 82, this.height - 28, 72, 20,
-                I18n.format("gui.cancel", new Object[0])));
-        this.selectButton.enabled = false;
-        this.deleteButton.enabled = false;
-        this.renameButton.enabled = false;
-        this.recreateButton.enabled = false;
+        this.selectedIndex = index;
+        boolean flag = index >= 0 && index < this.saves.size();
+        this.selectButton.enabled = flag;
+        this.deleteButton.enabled = flag;
+        this.renameButton.enabled = flag;
+        this.recreateButton.enabled = flag;
     }
 
     /**
@@ -178,10 +173,6 @@ public class GuiSelectWorld extends GuiScreen implements GuiYesNoCallback
                 guicreateworld.recreateFromExistingWorld(worldinfo);
                 this.mc.displayGuiScreen(guicreateworld);
             }
-            else
-            {
-                this.availableWorlds.actionPerformed(button);
-            }
         }
     }
 
@@ -189,9 +180,9 @@ public class GuiSelectWorld extends GuiScreen implements GuiYesNoCallback
     {
         this.mc.displayGuiScreen((GuiScreen)null);
 
-        if (!this.field_146634_i)
+        if (!this.launching)
         {
-            this.field_146634_i = true;
+            this.launching = true;
             String s = this.func_146621_a(p_146615_1_);
 
             if (s == null)
@@ -239,23 +230,148 @@ public class GuiSelectWorld extends GuiScreen implements GuiYesNoCallback
         }
     }
 
-    /**
-     * Draws the screen and all the components in it. Args : mouseX, mouseY, renderPartialTicks
-     */
-    public void drawScreen(int mouseX, int mouseY, float partialTicks)
+    @Override
+    protected void cardClicked(int mouseX, int mouseY, int button)
     {
-        BackgroundShader.draw(this.width, this.height, this.mc.displayWidth, this.mc.displayHeight);
-        Fonts.load();
-        this.availableWorlds.drawScreen(mouseX, mouseY, partialTicks);
-        BackgroundShader.drawSectionTitle(this.screenTitle, this.width / 2.0F, 14.0F);
-        super.drawScreen(mouseX, mouseY, partialTicks);
+        int index = this.rowAt(mouseX, mouseY);
+        if (button != 0 || index < 0)
+        {
+            return;
+        }
+        boolean twice = index == this.lastClicked && Minecraft.getSystemTime() - this.lastClickTime < 250L;
+        this.lastClicked = index;
+        this.lastClickTime = Minecraft.getSystemTime();
+        this.select(index);
+        if (twice)
+        {
+            this.func_146615_e(index);
+        }
+    }
+
+    @Override
+    protected void cardScrolled(int mouseX, int mouseY, int wheel)
+    {
+        this.list.wheel(wheel, ROW_STEP);
+    }
+
+    private int rowAt(int mouseX, int mouseY)
+    {
+        if (!this.list.contains(mouseX, mouseY))
+        {
+            return -1;
+        }
+        float offset = mouseY - this.list.top() - 3.0F;
+        int index = (int) Math.floor(offset / ROW_STEP);
+        return index >= 0 && index < this.saves.size() && offset - index * ROW_STEP < ROW_H ? index : -1;
+    }
+
+    @Override
+    protected void drawCard(int mouseX, int mouseY, float partialTicks)
+    {
+        this.drawHeader("Play", "Singleplayer");
+        CustomFont mono = GlassUi.MONO.get();
+        String count = this.saves.size() + (this.saves.size() == 1 ? " world" : " worlds");
+        mono.drawString(count, this.cardX + this.cardW - PAD - mono.getStringWidth(count),
+                this.cardY + PAD_TOP + (27.0F - mono.getHeight()) / 2.0F, 0x80FFFFFF);
+
+        GlassUi.well(this.list.x, this.list.y, this.list.w, this.list.h);
+        this.list.setContent(this.saves.size() * ROW_STEP + 3.0F);
+        int hover = this.rowAt(mouseX, mouseY);
+        this.clip(this.list.x, this.list.y, this.list.w, this.list.h);
+        for (int i = 0; i < this.saves.size(); i++)
+        {
+            float y = this.list.top() + 3.0F + i * ROW_STEP;
+            if (y + ROW_H > this.list.y && y < this.list.y + this.list.h)
+            {
+                this.drawWorld(this.saves.get(i), i, this.list.x + 3.0F, y, this.list.w - 6.0F, i == hover);
+            }
+        }
+        this.unclip();
+        this.list.drawScrollbar();
+        this.drawButtons(mouseX, mouseY, partialTicks);
+    }
+
+    private void drawWorld(SaveFormatComparator save, int index, float x, float y, float w, boolean hover)
+    {
+        GlassUi.entry(x, y, w, ROW_H, hover, index == this.selectedIndex);
+        WorldSettings.GameType type = save.getEnumGameType();
+        boolean hardcore = save.isHardcoreModeEnabled();
+        Icons.Icon icon = Icons.Icon.CUBE;
+        int iconColor = 0xB8FFFFFF;
+        String mode = type == WorldSettings.GameType.CREATIVE ? "Creative"
+                : type == WorldSettings.GameType.ADVENTURE ? "Adventure"
+                : type == WorldSettings.GameType.SPECTATOR ? "Spectator" : "Survival";
+        int badgeFill = 0x0FFFFFFF;
+        int badgeText = 0xB8FFFFFF;
+        if (hardcore)
+        {
+            mode = "Hardcore";
+            icon = Icons.Icon.HEART;
+            iconColor = GlassUi.DANGER;
+            badgeFill = 0x1FEE8A8E;
+            badgeText = GlassUi.DANGER;
+        }
+        else if (type == WorldSettings.GameType.CREATIVE)
+        {
+            icon = Icons.Icon.STAR;
+            iconColor = GlassUi.FROST;
+            badgeFill = 0x1F84D2E3;
+            badgeText = GlassUi.FROST;
+        }
+        else if (type == WorldSettings.GameType.SPECTATOR)
+        {
+            icon = Icons.Icon.EYE;
+        }
+        if (save.requiresConversion())
+        {
+            mode = "Needs conversion";
+            badgeFill = 0x0FFFFFFF;
+            badgeText = 0xB8FFFFFF;
+        }
+
+        GlassShader.rect(x + 7.5F, y + 7.5F, 27.0F, 27.0F, 5.25F, 0x0DFFFFFF, 0x0DFFFFFF);
+        GlassShader.stroke(x + 7.5F, y + 7.5F, 27.0F, 27.0F, 5.25F, GlassUi.LINE);
+        Icons.draw(icon, x + 14.25F, y + 14.25F, 13.5F, 1.8F, iconColor);
+
+        boolean cheats = save.getCheatsEnabled() && !save.requiresConversion();
+        float badgesW = GlassUi.badgeWidth(mode) + (cheats ? 4.5F + GlassUi.badgeWidth("Cheats") : 0.0F);
+        float bx = x + w - 10.5F - badgesW;
+        bx += GlassUi.badge(bx, y + 13.5F, mode, badgeFill, badgeText) + 4.5F;
+        if (cheats)
+        {
+            GlassUi.badge(bx, y + 13.5F, "Cheats", 0x0FFFFFFF, 0xA8FFFFFF);
+        }
+
+        float tx = x + 43.5F;
+        int textW = Math.round(x + w - 10.5F - badgesW - 9.0F - tx);
+        String name = save.getDisplayName();
+        if (StringUtils.isEmpty(name))
+        {
+            name = I18n.format("selectWorld.world", new Object[0]) + " " + (index + 1);
+        }
+        CustomFont font = GlassUi.ROW.get();
+        font.drawString(font.trimToWidth(name, textW, "..."), tx, y + 8.5F + (12.0F - font.getHeight()) / 2.0F, GlassUi.ICE);
+        CustomFont mono = GlassUi.MONO.get();
+        float my = y + 23.5F + (10.0F - mono.getHeight()) / 2.0F;
+        String folder = mono.trimToWidth(save.getFileName(), textW / 2, "...");
+        mono.drawString(folder, tx, my, 0x80FFFFFF);
+        float dx = tx + mono.getStringWidth(folder) + 6.0F;
+        GlassShader.rect(dx, y + 27.375F, 2.25F, 2.25F, 1.125F, 0x4DFFFFFF, 0x4DFFFFFF);
+        mono.drawString(this.dateFormat.format(new Date(save.getLastTimePlayed())), dx + 8.25F, my, 0x80FFFFFF);
+    }
+
+    @Override
+    protected void drawFooter()
+    {
+        this.versionChip();
+        this.hintChip("Double-click a world to play");
     }
 
     /**
      * Generate a GuiYesNo asking for confirmation to delete a world
-     *  
+     *
      * Called when user selects the "Delete" button.
-     *  
+     *
      * @param selectWorld A reference back to the GuiSelectWorld spawning the GuiYesNo
      * @param name The name of the world selected for deletion
      * @param id An arbitrary integer passed back to selectWorld's confirmClicked method
@@ -268,99 +384,5 @@ public class GuiSelectWorld extends GuiScreen implements GuiYesNoCallback
         String s3 = I18n.format("gui.cancel", new Object[0]);
         GuiYesNo guiyesno = new GuiYesNo(selectWorld, s, s1, s2, s3, id);
         return guiyesno;
-    }
-
-    class List extends GuiSlot
-    {
-        public List(Minecraft mcIn)
-        {
-            super(mcIn, GuiSelectWorld.this.width, GuiSelectWorld.this.height, 32, GuiSelectWorld.this.height - 64, 36);
-        }
-
-        protected int getSize()
-        {
-            return GuiSelectWorld.this.field_146639_s.size();
-        }
-
-        protected void elementClicked(int slotIndex, boolean isDoubleClick, int mouseX, int mouseY)
-        {
-            GuiSelectWorld.this.selectedIndex = slotIndex;
-            boolean flag = GuiSelectWorld.this.selectedIndex >= 0 && GuiSelectWorld.this.selectedIndex < this.getSize();
-            GuiSelectWorld.this.selectButton.enabled = flag;
-            GuiSelectWorld.this.deleteButton.enabled = flag;
-            GuiSelectWorld.this.renameButton.enabled = flag;
-            GuiSelectWorld.this.recreateButton.enabled = flag;
-
-            if (isDoubleClick && flag)
-            {
-                GuiSelectWorld.this.func_146615_e(slotIndex);
-            }
-        }
-
-        protected boolean isSelected(int slotIndex)
-        {
-            return slotIndex == GuiSelectWorld.this.selectedIndex;
-        }
-
-        protected int getContentHeight()
-        {
-            return GuiSelectWorld.this.field_146639_s.size() * 36;
-        }
-
-        protected void drawBackground()
-        {
-            // The parent screen owns the shared shader canvas.
-        }
-
-        @Override
-        protected void drawContainerBackground(Tessellator tessellator)
-        {
-            BackgroundShader.drawListPanel(this.left, this.top, this.right, this.bottom);
-        }
-
-        @Override
-        protected void overlayBackground(int startY, int endY, int startAlpha, int endAlpha)
-        {
-            BackgroundShader.drawListMask(this.left, this.right, startY, endY, Math.max(startAlpha, endAlpha));
-        }
-
-        protected void drawSlot(int entryID, int p_180791_2_, int p_180791_3_, int p_180791_4_, int mouseXIn, int mouseYIn)
-        {
-            SaveFormatComparator saveformatcomparator = (SaveFormatComparator)GuiSelectWorld.this.field_146639_s.get(entryID);
-            String s = saveformatcomparator.getDisplayName();
-
-            if (StringUtils.isEmpty(s))
-            {
-                s = GuiSelectWorld.this.field_146637_u + " " + (entryID + 1);
-            }
-
-            String s1 = saveformatcomparator.getFileName();
-            s1 = s1 + " (" + GuiSelectWorld.this.field_146633_h.format(new Date(saveformatcomparator.getLastTimePlayed()));
-            s1 = s1 + ")";
-            String s2 = "";
-
-            if (saveformatcomparator.requiresConversion())
-            {
-                s2 = GuiSelectWorld.this.field_146636_v + " " + s2;
-            }
-            else
-            {
-                s2 = GuiSelectWorld.this.field_146635_w[saveformatcomparator.getEnumGameType().getID()];
-
-                if (saveformatcomparator.isHardcoreModeEnabled())
-                {
-                    s2 = EnumChatFormatting.DARK_RED + I18n.format("gameMode.hardcore", new Object[0]) + EnumChatFormatting.RESET;
-                }
-
-                if (saveformatcomparator.getCheatsEnabled())
-                {
-                    s2 = s2 + ", " + I18n.format("selectWorld.cheats", new Object[0]);
-                }
-            }
-
-            GuiSelectWorld.this.drawString(GuiSelectWorld.this.fontRendererObj, s, p_180791_2_ + 2, p_180791_3_ + 1, 16777215);
-            GuiSelectWorld.this.drawString(GuiSelectWorld.this.fontRendererObj, s1, p_180791_2_ + 2, p_180791_3_ + 12, 8421504);
-            GuiSelectWorld.this.drawString(GuiSelectWorld.this.fontRendererObj, s2, p_180791_2_ + 2, p_180791_3_ + 12 + 10, 8421504);
-        }
     }
 }

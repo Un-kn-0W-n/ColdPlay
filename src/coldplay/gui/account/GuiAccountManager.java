@@ -6,35 +6,38 @@ import coldplay.account.AltManager;
 import coldplay.account.MicrosoftAuth;
 import coldplay.account.ProxyConfig;
 import coldplay.account.ProxyManager;
-import coldplay.gui.BackgroundShader;
-import coldplay.gui.CenteredPanelLayout;
-import coldplay.gui.CustomSearchField;
 import coldplay.gui.CustomTextInput;
+import coldplay.gui.GlassList;
+import coldplay.gui.GlassMenuButton;
+import coldplay.gui.GlassScreen;
+import coldplay.gui.GlassShader;
+import coldplay.gui.GlassUi;
+import coldplay.gui.Icons;
 import coldplay.gui.Theme;
-import coldplay.gui.StyledButton;
 import coldplay.util.RenderUtil;
 import coldplay.util.font.CustomFont;
-import coldplay.util.font.Fonts;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.util.MathHelper;
 import net.minecraft.util.Session;
 
 import org.lwjglx.input.Keyboard;
-import org.lwjglx.input.Mouse;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicLong;
 
 /** Account and proxy editor. Logins run on a worker thread; the session is applied on the client thread. */
-public class GuiAccountManager extends GuiScreen {
+public class GuiAccountManager extends GlassScreen {
 
-    private static final int ROW_H = 22;
-    private static final int PAD = 14;
-    private static final int DELETE_SIZE = 12;
+    private static final float ROW_H = 34.5F;
+    private static final float ROW_STEP = 37.5F;
+    private static final float COL_W = 255.0F;
+    private static final float FIELD_H = 25.5F;
+    private static final String[] TABS = {"Premium", "Cracked"};
     private static final AtomicLong LOGIN_ATTEMPTS = new AtomicLong();
 
     private final GuiScreen parentScreen;
@@ -53,22 +56,12 @@ public class GuiAccountManager extends GuiScreen {
 
     private volatile boolean busy;
     private volatile String status = "";
-    private volatile int statusColor = Theme.TEXT_DIM;
-    private int scrollOffset;
+    private volatile int statusColor = GlassUi.DIM;
 
-    private int left, right, top, bottom, panelW;
-    private int titleY, subtitleY, tokenLabelY;
-    private int tabY, tabH, tabW, crackedTabX;
-    private int tokenX, tokenY, tokenW, tokenH;
-    private int loginX, loginY, loginW, loginH;
-    private int statusY, savedLabelY;
-    private int proxyLabelY, proxyFieldH;
-    private int proxyHostX, proxyHostY, proxyHostW;
-    private int proxyCredY, proxyUserX, proxyUserW, proxyPassX, proxyPassW;
-    private int saveProxyX, saveProxyY, saveProxyW, saveProxyH;
-    private int proxyToggleX, proxyToggleW;
-    private int listX, listY, listW, listBottom;
-    private int backX, backY, backW, backH;
+    private final GlassList list = new GlassList();
+    private float leftX;
+    private float bodyY;
+    private GuiButton loginButton;
 
     public GuiAccountManager(final GuiScreen parentScreen) {
         this.parentScreen = parentScreen;
@@ -77,7 +70,6 @@ public class GuiAccountManager extends GuiScreen {
     @Override
     public void initGui() {
         Keyboard.enableRepeatEvents(true);
-        Fonts.load();
         AltManager.getInstance().load(this.mc.mcDataDir);
         final ProxyManager proxyManager = ProxyManager.getInstance();
         proxyManager.load(this.mc.mcDataDir);
@@ -85,71 +77,17 @@ public class GuiAccountManager extends GuiScreen {
         this.fields[F_HOST] = proxyManager.getProxyAddress();
         this.fields[F_USER] = proxyManager.getProxyUsername();
         this.fields[F_PASS] = proxyManager.getProxyPassword();
-    }
 
-    private void updateLayout() {
-        CenteredPanelLayout panel = CenteredPanelLayout.create(this.width, this.height, 360, 20, 24);
-        this.left = panel.getLeft();
-        this.right = panel.getRight();
-        this.top = panel.getTop();
-        this.bottom = panel.getBottom();
-        this.panelW = panel.getWidth();
-
-        this.titleY = this.top + 10;
-        this.subtitleY = this.titleY + 22;
-
-        this.tabY = this.subtitleY + 16;
-        this.tabH = 16;
-        this.tabW = (this.panelW - PAD * 2 - 6) / 2;
-        this.crackedTabX = this.left + PAD + this.tabW + 6;
-
-        this.tokenLabelY = this.tabY + this.tabH + 8;
-
-        this.tokenX = this.left + PAD;
-        this.tokenW = this.panelW - PAD * 2;
-        this.tokenY = this.tokenLabelY + 13;
-        this.tokenH = 14;
-
-        this.loginX = this.left + PAD;
-        this.loginW = this.panelW - PAD * 2;
-        this.loginY = this.tokenY + this.tokenH + 8;
-        this.loginH = 16;
-
-        this.statusY = this.loginY + this.loginH + 7;
-
-        this.proxyFieldH = 14;
-        final int credGap = 6;
-        this.proxyLabelY = this.statusY + 14;
-
-        this.proxyHostX = this.left + PAD;
-        this.proxyHostW = this.panelW - PAD * 2;
-        this.proxyHostY = this.proxyLabelY + 12;
-
-        this.proxyCredY = this.proxyHostY + this.proxyFieldH + 4;
-        this.proxyUserX = this.left + PAD;
-        this.proxyUserW = (this.panelW - PAD * 2 - credGap) / 2;
-        this.proxyPassX = this.proxyUserX + this.proxyUserW + credGap;
-        this.proxyPassW = this.right - PAD - this.proxyPassX;
-
-        this.proxyToggleW = 70;
-        this.saveProxyX = this.left + PAD;
-        this.saveProxyW = this.panelW - PAD * 2 - this.proxyToggleW - 6;
-        this.saveProxyY = this.proxyCredY + this.proxyFieldH + 6;
-        this.saveProxyH = 16;
-        this.proxyToggleX = this.saveProxyX + this.saveProxyW + 6;
-
-        this.savedLabelY = this.saveProxyY + this.saveProxyH + 10;
-
-        CenteredPanelLayout.Rect back = panel.bottomButton(PAD, 16, 8);
-        this.backX = back.x;
-        this.backY = back.y;
-        this.backW = back.width;
-        this.backH = back.height;
-
-        this.listX = this.left + PAD;
-        this.listW = this.panelW - PAD * 2;
-        this.listY = this.savedLabelY + 14;
-        this.listBottom = this.backY - 8;
+        this.setCard(570.0F, 355.5F);
+        this.leftX = this.cardX + PAD;
+        this.bodyY = this.cardY + 55.5F;
+        final float rightX = this.leftX + COL_W + 30.75F;
+        this.list.place(rightX, this.bodyY + 19.5F, this.cardX + this.cardW - PAD - rightX, 265.5F);
+        this.addBack(0);
+        this.buttonList.add(this.loginButton = new GlassMenuButton(1, this.leftX, this.bodyY + 83.25F, COL_W, FIELD_H,
+                "Login", Icons.Icon.LOGIN, GlassMenuButton.Style.PRIMARY, false));
+        this.buttonList.add(new GlassMenuButton(3, this.leftX, this.bodyY + 234.0F, COL_W - 78.0F, FIELD_H,
+                "Save Proxy", Icons.Icon.CHECK, GlassMenuButton.Style.CHIP_FIT, false));
     }
 
     @Override
@@ -158,198 +96,216 @@ public class GuiAccountManager extends GuiScreen {
     }
 
     @Override
-    public void drawScreen(final int mouseX, final int mouseY, final float partialTicks) {
-        Fonts.load();
-        this.updateLayout();
-
-        BackgroundShader.draw(this.width, this.height, this.mc.displayWidth, this.mc.displayHeight);
-        RenderUtil.rect(this.left, this.top, this.panelW, this.bottom - this.top, Theme.BODY);
-        Theme.contour(this.left, this.top, this.panelW, this.bottom - this.top);
-
-        final CustomFont font = Fonts.medium;
-        final CustomFont small = Fonts.list;
-
-        BackgroundShader.drawSectionTitle("Account Manager", this.width / 2f, this.titleY);
-        final Session session = this.mc.getSession();
-        if (font != null && session != null) {
-            final Session.Type type = session.getSessionType();
-            final boolean premium = type == Session.Type.MOJANG || type == Session.Type.MSA;
-            final String label = session.getUsername() + (premium ? " (Premium)" : " (Offline)");
-            font.drawCentered(label, this.width / 2f, this.subtitleY, premium ? Theme.FROST : Theme.TEXT_DIM);
+    protected void actionPerformed(final GuiButton button) {
+        if (button.id == 0) {
+            this.mc.displayGuiScreen(this.parentScreen);
+        } else if (button.id == 1) {
+            if (this.crackedTab) {
+                this.loginOffline();
+            } else {
+                this.startLogin();
+            }
+        } else if (button.id == 3) {
+            this.applyProxyFromFields();
         }
+    }
 
-        drawButton(font, "Premium", this.left + PAD, this.tabY, this.tabW, this.tabH, mouseX, mouseY, true);
-        drawButton(font, "Cracked", this.crackedTabX, this.tabY, this.tabW, this.tabH, mouseX, mouseY, true);
-        final int selX = this.crackedTab ? this.crackedTabX : this.left + PAD;
-        RenderUtil.rect(selX, this.tabY + this.tabH - Theme.TICK_PX, this.tabW, Theme.TICK_PX, Theme.FROST);
+    @Override
+    protected void drawCard(final int mouseX, final int mouseY, final float partialTicks) {
+        this.drawHeader("Play", "Alt Manager");
+        this.drawSession();
+        this.loginButton.displayString = !this.crackedTab && this.busy ? "Validating..." : "Login";
+        this.loginButton.enabled = !this.busy;
 
-        if (font != null) {
-            font.drawString(this.crackedTab ? "Username" : "Refresh Token (M.C...)",
-                    this.left + PAD, this.tokenLabelY, Theme.TEXT_DIM);
+        final float b = this.bodyY;
+        final float x = this.leftX;
+        GlassUi.segmented(x, b, COL_W, FIELD_H, TABS, this.crackedTab ? 1 : 0,
+                RenderUtil.hovered(mouseX, mouseY, x, b, COL_W, FIELD_H) ? GlassUi.segmentAt(x, COL_W, 2, mouseX) : -1, true);
+        final CustomFont label = GlassUi.LABEL.get();
+        label.drawString(this.crackedTab ? "Username" : "Refresh Token (M.C...)", x, b + 36.0F + (9.75F - label.getHeight()) / 2.0F, GlassUi.DIM);
+        final int slot = this.crackedTab ? F_NAME : F_TOKEN;
+        GlassUi.field(this.crackedTab ? GlassUi.BODY.get() : GlassUi.MONO_BODY.get(), x, b + 50.25F, COL_W, FIELD_H,
+                this.fields[slot], this.focused == slot,
+                this.crackedTab ? "3-16 letters, numbers, _" : "M.C... refresh token or eyJ... access token",
+                this.cursorCounter, MASKED[slot], this.crackedTab ? Icons.Icon.USER : Icons.Icon.KEY);
+
+        if (this.status != null && !this.status.isEmpty()) {
+            final CustomFont body = GlassUi.BODY.get();
+            final String text = body.trimToWidth(this.status, Math.round(COL_W - 10.5F), "...");
+            final float tw = 10.5F + body.getStringWidth(text);
+            final float tx = x + (COL_W - tw) / 2.0F;
+            int dot = this.statusColor;
+            if (this.busy) {
+                final double phase = Minecraft.getSystemTime() / 1200.0 % 1.0;
+                dot = Theme.withAlpha(dot, (int) (64 + 191 * (0.5 - 0.5 * Math.cos(phase * Math.PI * 2))));
+            }
+            GlassShader.rect(tx, b + 120.0F, 4.5F, 4.5F, 2.25F, dot, dot);
+            body.drawString(text, tx + 10.5F, b + 116.25F + (12.0F - body.getHeight()) / 2.0F, this.statusColor);
         }
-        this.drawField(font, this.crackedTab ? F_NAME : F_TOKEN,
-                this.tokenX, this.tokenY, this.tokenW, this.tokenH, "");
-        drawButton(font, !this.crackedTab && this.busy ? "Validating..." : "Login",
-                this.loginX, this.loginY, this.loginW, this.loginH, mouseX, mouseY, !this.busy);
-
-        if (font != null && this.status != null && !this.status.isEmpty()) {
-            font.drawCentered(this.status, this.width / 2f, this.statusY, this.statusColor);
-        }
+        GlassUi.divider(x, b + 140.25F, COL_W);
 
         final ProxyManager proxyManager = ProxyManager.getInstance();
         final boolean proxyConfigured = proxyManager.hasProxyConfigured();
         final boolean proxyOn = proxyManager.isProxyEnabled();
-        if (font != null) {
-            font.drawString("Proxy (SOCKS5)", this.left + PAD, this.proxyLabelY, Theme.TEXT_DIM);
+        GlassUi.section("Proxy (SOCKS5)", x, b + 151.5F + 2.25F);
+        if (proxyConfigured) {
+            final String state = proxyOn ? "ACTIVE" : "OFF";
+            final CustomFont mono = GlassUi.MONO.get();
+            final float bw = 9.0F + mono.getStringWidth(state, 0.45F);
+            final float bx = x + COL_W - bw;
+            final int fill = proxyOn ? 0x1F84D2E3 : 0x0FFFFFFF;
+            GlassShader.rect(bx, b + 151.5F, bw, 13.5F, 3.0F, fill, fill);
+            mono.drawString(state, bx + 4.5F, b + 151.5F + (13.5F - mono.getHeight()) / 2.0F,
+                    proxyOn ? GlassUi.FROST : 0x80FFFFFF, 0.45F);
         }
-        if (small != null && proxyConfigured) {
-            final String proxyState = proxyOn ? "ACTIVE" : "OFF";
-            small.drawString(proxyState, this.right - PAD - small.getStringWidth(proxyState), this.proxyLabelY, proxyOn ? Theme.FROST : Theme.TEXT_MUTE);
-        }
-        this.drawField(font, F_HOST, this.proxyHostX, this.proxyHostY, this.proxyHostW, this.proxyFieldH, "host:port");
-        this.drawField(font, F_USER, this.proxyUserX, this.proxyCredY, this.proxyUserW, this.proxyFieldH, "username");
-        this.drawField(font, F_PASS, this.proxyPassX, this.proxyCredY, this.proxyPassW, this.proxyFieldH, "password");
-        drawButton(font, "Save Proxy", this.saveProxyX, this.saveProxyY, this.saveProxyW, this.saveProxyH, mouseX, mouseY, true);
-        drawButton(font, proxyOn ? "On" : "Off", this.proxyToggleX, this.saveProxyY, this.proxyToggleW, this.saveProxyH, mouseX, mouseY, proxyConfigured);
+        GlassUi.field(GlassUi.MONO_BODY.get(), x, b + 171.0F, COL_W, FIELD_H, this.fields[F_HOST], this.focused == F_HOST,
+                "host:port", this.cursorCounter, false, null);
+        final float half = (COL_W - 6.0F) / 2.0F;
+        GlassUi.field(GlassUi.BODY.get(), x, b + 202.5F, half, FIELD_H, this.fields[F_USER], this.focused == F_USER,
+                "username", this.cursorCounter, false, null);
+        GlassUi.field(GlassUi.BODY.get(), x + half + 6.0F, b + 202.5F, half, FIELD_H, this.fields[F_PASS], this.focused == F_PASS,
+                "password", this.cursorCounter, true, null);
+        this.drawProxyToggle(mouseX, mouseY, proxyConfigured, proxyOn);
 
-        if (font != null) {
-            font.drawString(this.crackedTab ? "Saved Cracked" : "Saved Premium",
-                    this.left + PAD, this.savedLabelY, Theme.TEXT_DIM);
-        }
-        this.drawList(font, mouseX, mouseY);
-
-        drawButton(font, "Back", this.backX, this.backY, this.backW, this.backH, mouseX, mouseY, true);
+        GlassShader.rect(x + COL_W + 15.0F, b, 0.75F, 285.0F, 0.0F, GlassUi.LINE, GlassUi.LINE);
+        this.drawAlts(mouseX, mouseY);
+        this.drawButtons(mouseX, mouseY, partialTicks);
     }
 
-    private void drawList(final CustomFont font, final int mouseX, final int mouseY) {
-        final List<Alt> alts = AltManager.getInstance().getAlts(this.crackedTab);
-        final int listH = this.listBottom - this.listY;
-
-        if (alts.isEmpty()) {
-            if (font != null) {
-                font.drawCentered("No saved alts", this.width / 2f, this.listY + listH / 2f - font.getHeight() / 2f, Theme.TEXT_MUTE);
-            }
-            this.scrollOffset = 0;
-            RenderUtil.outline(this.listX, this.listY, this.listX + this.listW, this.listBottom, 1, Theme.SEP);
+    private void drawSession() {
+        final Session session = this.mc.getSession();
+        if (session == null) {
             return;
         }
+        final Session.Type type = session.getSessionType();
+        final boolean premium = type == Session.Type.MOJANG || type == Session.Type.MSA;
+        final String name = session.getUsername();
+        final String kind = premium ? "Premium" : "Offline";
+        final CustomFont font = GlassUi.BODY_MEDIUM.get();
+        final float w = 3.75F + 16.5F + 6.0F + font.getStringWidth(name) + 6.0F + GlassUi.badgeWidth(kind) + 7.5F;
+        final float x = this.cardX + this.cardW - PAD - w;
+        final float y = this.cardY + PAD_TOP + 1.5F;
+        GlassShader.rect(x, y, w, 24.0F, 6.0F, 0x0AFFFFFF, 0x0AFFFFFF);
+        GlassShader.stroke(x, y, w, 24.0F, 6.0F, GlassUi.LINE);
+        this.avatar(x + 3.75F, y + 3.75F, 16.5F, name);
+        font.drawString(name, x + 26.25F, y + (24.0F - font.getHeight()) / 2.0F, 0xFFFFFFFF);
+        GlassUi.badge(x + 32.25F + font.getStringWidth(name), y + 4.5F, kind,
+                premium ? 0x1F84D2E3 : 0x0FFFFFFF, premium ? GlassUi.FROST : 0xB8FFFFFF);
+    }
 
-        final int contentH = alts.size() * ROW_H;
-        this.scrollOffset = MathHelper.clamp_int(this.scrollOffset, 0, Math.max(0, contentH - listH));
+    private void avatar(final float x, final float y, final float size, final String name) {
+        GlassShader.rect(x, y, size, size, size * 0.22F, 0x2484D2E3, 0x2484D2E3);
+        final CustomFont font = GlassUi.STRONG.get();
+        final String initial = name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase(Locale.ROOT);
+        font.drawCentered(initial, x + size / 2.0F, y + (size - font.getHeight()) / 2.0F, GlassUi.FROST);
+    }
 
-        final int sf = new ScaledResolution(this.mc).getScaleFactor();
-        RenderUtil.beginScissor(this.listX, this.listY, this.listW, listH, sf);
+    private float toggleX() {
+        return this.leftX + COL_W - 72.0F;
+    }
+
+    private void drawProxyToggle(final int mouseX, final int mouseY, final boolean configured, final boolean on) {
+        final float x = this.toggleX();
+        final float y = this.bodyY + 234.0F;
+        final boolean hover = configured && RenderUtil.hovered(mouseX, mouseY, x, y, 72.0F, FIELD_H);
+        GlassUi.chip(x, y, 72.0F, FIELD_H, "", null, hover ? 1.0F : 0.0F, configured, false, false);
+        final CustomFont font = GlassUi.BODY.get();
+        final String label = on ? "On" : "Off";
+        final float content = 21.0F + 7.5F + font.getStringWidth(label);
+        final float cx = x + (72.0F - content) / 2.0F;
+        GlassUi.toggle(cx, y + 6.75F, on);
+        font.drawString(label, cx + 28.5F, y + (FIELD_H - font.getHeight()) / 2.0F, configured ? 0xCCFFFFFF : GlassUi.MUTE);
+    }
+
+    private void drawAlts(final int mouseX, final int mouseY) {
+        final List<Alt> alts = AltManager.getInstance().getAlts(this.crackedTab);
+        final CustomFont mono = GlassUi.MONO.get();
+        GlassUi.section(this.crackedTab ? "Saved Cracked" : "Saved Premium", this.list.x, this.bodyY + 2.25F);
+        final String count = alts.size() + "/50";
+        mono.drawString(count, this.list.x + this.list.w - mono.getStringWidth(count), this.bodyY + (13.5F - mono.getHeight()) / 2.0F, GlassUi.MUTE);
+
+        GlassUi.well(this.list.x, this.list.y, this.list.w, this.list.h);
+        if (alts.isEmpty()) {
+            final CustomFont body = GlassUi.BODY.get();
+            body.drawCentered("No saved alts", this.list.x + this.list.w / 2.0F,
+                    this.list.y + (this.list.h - body.getHeight()) / 2.0F, GlassUi.MUTE);
+            return;
+        }
+        this.list.setContent(alts.size() * ROW_STEP + 3.0F);
+        final int hover = this.altAt(alts, mouseX, mouseY);
+        final Session session = this.mc.getSession();
+        final float x = this.list.x + 3.0F;
+        final float w = this.list.w - 6.0F;
+        this.clip(this.list.x, this.list.y, this.list.w, this.list.h);
         for (int i = 0; i < alts.size(); i++) {
-            final int rowY = this.rowTop(i);
-            if (!this.rowVisible(rowY)) {
+            final float y = this.list.top() + 3.0F + i * ROW_STEP;
+            if (y + ROW_H < this.list.y || y > this.list.y + this.list.h) {
                 continue;
             }
-            this.drawRow(font, alts.get(i), rowY, mouseX, mouseY);
-            if (i > 0) {
-                RenderUtil.rectBounds(this.listX, rowY, this.listX + this.listW, rowY + 1, Theme.SEP);
+            final String name = alts.get(i).getUsername() == null ? "?" : alts.get(i).getUsername();
+            final boolean current = session != null && name.equals(session.getUsername());
+            GlassUi.entry(x, y, w, ROW_H, i == hover, current);
+            this.avatar(x + 6.75F, y + 6.75F, 21.0F, name);
+            final float removeX = x + w - 6.0F - 19.5F;
+            float right = removeX - 3.0F;
+            if (current) {
+                right -= this.inUse(right, y + 10.5F);
+            }
+            final CustomFont font = GlassUi.ROW.get();
+            font.drawString(font.trimToWidth(name, Math.round(right - 6.0F - (x + 36.75F)), "..."), x + 36.75F,
+                    y + (ROW_H - font.getHeight()) / 2.0F, GlassUi.ICE);
+            if (i == hover || current) {
+                GlassUi.ghost(removeX, y + 7.5F, 19.5F, Icons.Icon.CLOSE,
+                        RenderUtil.hovered(mouseX, mouseY, removeX, y + 7.5F, 19.5F, 19.5F), true);
             }
         }
-        RenderUtil.endScissor();
-        this.drawScrollbar(contentH, listH);
-        // frame goes last, over any row hover fill
-        RenderUtil.outline(this.listX, this.listY, this.listX + this.listW, this.listBottom, 1, Theme.SEP);
+        this.unclip();
+        this.list.drawScrollbar();
     }
 
-    private void drawRow(final CustomFont font, final Alt alt, final int rowY, final int mouseX, final int mouseY) {
-        final int delX = this.delX();
-        final int delY = delY(rowY);
-        final boolean delHover = this.hitsDelete(rowY, mouseX, mouseY);
-        if (delHover) {
-            RenderUtil.rect(delX, delY, DELETE_SIZE, DELETE_SIZE, Theme.HOVER_LIFT);
-        } else if (RenderUtil.hovered(mouseX, mouseY, this.listX, rowY, this.listW, ROW_H)) {
-            RenderUtil.rect(this.listX, rowY, this.listW, ROW_H, Theme.HOVER_LIFT);
+    /** The "In use" tag ending at {@code right}; returns its width plus the gap before it. */
+    private float inUse(final float right, final float y) {
+        final CustomFont font = GlassUi.LABEL.get();
+        final float w = 5.25F + 3.75F + 4.5F + font.getStringWidth("In use") + 5.25F;
+        final float x = right - w;
+        GlassShader.rect(x, y, w, 13.5F, 3.0F, 0x1F84D2E3, 0x1F84D2E3);
+        GlassShader.rect(x + 5.25F, y + 4.875F, 3.75F, 3.75F, 1.875F, GlassUi.FROST, GlassUi.FROST);
+        font.drawString("In use", x + 13.5F, y + (13.5F - font.getHeight()) / 2.0F, GlassUi.FROST);
+        return w + 6.0F;
+    }
+
+    private int altAt(final List<Alt> alts, final int mouseX, final int mouseY) {
+        if (!this.list.contains(mouseX, mouseY)) {
+            return -1;
         }
-
-        final String name = alt.getUsername() == null ? "?" : alt.getUsername();
-        final Session session = this.mc.getSession();
-        if (session != null && name.equals(session.getUsername())) {
-            RenderUtil.rect(this.listX + Theme.CONTOUR_PX, rowY, Theme.TICK_PX, ROW_H, Theme.FROST);
-        }
-        if (font != null) {
-            font.drawString(name, this.listX + 6, rowY + (ROW_H - font.getHeight()) / 2, Theme.TEXT);
-            font.drawCenteredInRect("x", delX, delY, DELETE_SIZE, DELETE_SIZE,
-                    delHover ? Theme.DANGER : Theme.TEXT_DIM);
-        }
-    }
-
-    /** Indicator only; the thumb is not draggable. */
-    private void drawScrollbar(final int contentH, final int listH) {
-        final int maxScroll = contentH - listH;
-        final int trackH = listH - 4;
-        if (maxScroll <= 0 || trackH <= 0) {
-            return;
-        }
-        final int trackX = this.listX + this.listW - 2;
-        final int trackY = this.listY + 2;
-        final int thumbH = RenderUtil.scrollThumbHeight(trackH, listH, contentH);
-        RenderUtil.rect(trackX, trackY, 1, trackH, Theme.SEP);
-        RenderUtil.rect(trackX,
-                trackY + RenderUtil.scrollThumbOffset(trackH, thumbH, this.scrollOffset, maxScroll),
-                1, thumbH, Theme.FROST);
-    }
-
-    private int rowTop(final int index) {
-        return this.listY + index * ROW_H - this.scrollOffset;
-    }
-
-    private boolean rowVisible(final int rowTop) {
-        return rowTop + ROW_H >= this.listY && rowTop <= this.listBottom;
-    }
-
-    private int delX() {
-        return this.listX + this.listW - DELETE_SIZE - 4;
-    }
-
-    private static int delY(final int rowTop) {
-        return rowTop + (ROW_H - DELETE_SIZE) / 2;
-    }
-
-    private boolean hitsDelete(final int rowTop, final int mouseX, final int mouseY) {
-        return RenderUtil.hovered(mouseX, mouseY, this.delX(), delY(rowTop), DELETE_SIZE, DELETE_SIZE);
-    }
-
-    private void drawField(final CustomFont font, final int slot, final int x, final int y,
-                           final int w, final int h, final String placeholder) {
-        CustomSearchField.draw(font, x, y, w, h, this.fields[slot], this.focused == slot, placeholder,
-                this.cursorCounter, MASKED[slot]);
-    }
-
-    private void drawButton(final CustomFont font, final String label, final int x, final int y, final int w, final int h,
-                            final int mouseX, final int mouseY, final boolean enabled) {
-        StyledButton.draw(font, label, x, y, w, h, mouseX, mouseY, enabled, Theme.WELL, Theme.TEXT);
+        final float offset = mouseY - this.list.top() - 3.0F;
+        final int index = (int) Math.floor(offset / ROW_STEP);
+        return index >= 0 && index < alts.size() && offset - index * ROW_STEP < ROW_H ? index : -1;
     }
 
     @Override
-    public void handleMouseInput() throws IOException {
-        // event coordinates, not the last frame's cursor
-        final int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
-        final int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
-        final int wheel = Mouse.getEventDWheel();
-        super.handleMouseInput();
-        if (wheel != 0 && RenderUtil.hovered(mouseX, mouseY, this.listX, this.listY, this.listW, this.listBottom - this.listY)) {
-            this.scrollOffset -= Math.round(wheel / 120f) * ROW_H; // clamped by drawList
+    protected void cardScrolled(final int mouseX, final int mouseY, final int wheel) {
+        if (this.list.contains(mouseX, mouseY)) {
+            this.list.wheel(wheel, ROW_STEP);
         }
     }
 
     @Override
-    protected void mouseClicked(final int mouseX, final int mouseY, final int mouseButton) throws IOException {
+    protected void cardClicked(final int mouseX, final int mouseY, final int mouseButton) {
         if (mouseButton != 0) {
             return;
         }
-
+        final float b = this.bodyY;
+        final float x = this.leftX;
+        final float half = (COL_W - 6.0F) / 2.0F;
         this.focused = F_NONE;
-        if (RenderUtil.hovered(mouseX, mouseY, this.tokenX, this.tokenY, this.tokenW, this.tokenH)) {
+        if (RenderUtil.hovered(mouseX, mouseY, x, b + 50.25F, COL_W, FIELD_H)) {
             this.focused = this.crackedTab ? F_NAME : F_TOKEN;
-        } else if (RenderUtil.hovered(mouseX, mouseY, this.proxyHostX, this.proxyHostY, this.proxyHostW, this.proxyFieldH)) {
+        } else if (RenderUtil.hovered(mouseX, mouseY, x, b + 171.0F, COL_W, FIELD_H)) {
             this.focused = F_HOST;
-        } else if (RenderUtil.hovered(mouseX, mouseY, this.proxyUserX, this.proxyCredY, this.proxyUserW, this.proxyFieldH)) {
+        } else if (RenderUtil.hovered(mouseX, mouseY, x, b + 202.5F, half, FIELD_H)) {
             this.focused = F_USER;
-        } else if (RenderUtil.hovered(mouseX, mouseY, this.proxyPassX, this.proxyCredY, this.proxyPassW, this.proxyFieldH)) {
+        } else if (RenderUtil.hovered(mouseX, mouseY, x + half + 6.0F, b + 202.5F, half, FIELD_H)) {
             this.focused = F_PASS;
         }
         if (this.focused != F_NONE) {
@@ -357,42 +313,22 @@ public class GuiAccountManager extends GuiScreen {
             return;
         }
 
-        if (RenderUtil.hovered(mouseX, mouseY, this.backX, this.backY, this.backW, this.backH)) {
-            this.mc.displayGuiScreen(this.parentScreen);
-            return;
-        }
-
-        if (RenderUtil.hovered(mouseX, mouseY, this.left + PAD, this.tabY, this.tabW, this.tabH)) {
-            this.switchTab(false);
-            return;
-        }
-        if (RenderUtil.hovered(mouseX, mouseY, this.crackedTabX, this.tabY, this.tabW, this.tabH)) {
-            this.switchTab(true);
-            return;
-        }
-
-        if (RenderUtil.hovered(mouseX, mouseY, this.loginX, this.loginY, this.loginW, this.loginH)) {
-            if (this.crackedTab) {
-                this.loginOffline();
-            } else if (!this.busy) {
-                this.startLogin();
+        if (RenderUtil.hovered(mouseX, mouseY, x, b, COL_W, FIELD_H)) {
+            final int tab = GlassUi.segmentAt(x, COL_W, 2, mouseX);
+            if (tab >= 0) {
+                this.switchTab(tab == 1);
             }
             return;
         }
 
-        if (RenderUtil.hovered(mouseX, mouseY, this.saveProxyX, this.saveProxyY, this.saveProxyW, this.saveProxyH)) {
-            this.applyProxyFromFields();
-            return;
-        }
-
-        if (RenderUtil.hovered(mouseX, mouseY, this.proxyToggleX, this.saveProxyY, this.proxyToggleW, this.saveProxyH)) {
+        if (RenderUtil.hovered(mouseX, mouseY, this.toggleX(), b + 234.0F, 72.0F, FIELD_H)) {
             final ProxyManager manager = ProxyManager.getInstance();
             if (manager.hasProxyConfigured()) {
                 final boolean nowEnabled = !manager.isProxyEnabled();
                 manager.setProxyEnabled(nowEnabled);
-                this.setStatus(nowEnabled ? "Proxy enabled: " + manager.getProxyAddress() : "Proxy disabled", nowEnabled ? Theme.FROST : Theme.TEXT_DIM);
+                this.setStatus(nowEnabled ? "Proxy enabled: " + manager.getProxyAddress() : "Proxy disabled", nowEnabled ? GlassUi.FROST : GlassUi.DIM);
             } else {
-                this.setStatus("No proxy configured", Theme.TEXT_DIM);
+                this.setStatus("No proxy configured", GlassUi.DIM);
             }
             return;
         }
@@ -401,36 +337,30 @@ public class GuiAccountManager extends GuiScreen {
     }
 
     private void handleListClick(final int mouseX, final int mouseY) {
-        if (mouseY < this.listY || mouseY > this.listBottom) {
+        final List<Alt> alts = AltManager.getInstance().getAlts(this.crackedTab);
+        final int index = this.altAt(alts, mouseX, mouseY);
+        if (index < 0) {
             return;
         }
-        final List<Alt> alts = AltManager.getInstance().getAlts(this.crackedTab);
-        for (int i = 0; i < alts.size(); i++) {
-            final int rowY = this.rowTop(i);
-            if (!this.rowVisible(rowY)
-                    || !RenderUtil.hovered(mouseX, mouseY, this.listX, rowY, this.listW, ROW_H)) {
-                continue;
-            }
-            final Alt alt = alts.get(i);
-
-            if (this.hitsDelete(rowY, mouseX, mouseY)) {
-                if (AltManager.getInstance().remove(alt.getUuid())) {
-                    this.setStatus("Removed " + alt.getUsername(), Theme.TEXT_DIM);
-                }
-                return;
-            }
-
-            // Prevent an in-flight premium login from overwriting an offline session.
-            if (!this.busy) {
-                if (alt.isCracked()) {
-                    this.applyOffline(alt.getUsername());
-                } else if (!alt.getRefreshToken().isEmpty()) {
-                    this.runLogin(alt.getRefreshToken(), true);
-                } else {
-                    this.runLogin(alt.getToken(), false);
-                }
+        final Alt alt = alts.get(index);
+        final float y = this.list.top() + 3.0F + index * ROW_STEP;
+        final float removeX = this.list.x + this.list.w - 9.0F - 19.5F;
+        if (RenderUtil.hovered(mouseX, mouseY, removeX, y + 7.5F, 19.5F, 19.5F)) {
+            if (AltManager.getInstance().remove(alt.getUuid())) {
+                this.setStatus("Removed " + alt.getUsername(), GlassUi.DIM);
             }
             return;
+        }
+
+        // Prevent an in-flight premium login from overwriting an offline session.
+        if (!this.busy) {
+            if (alt.isCracked()) {
+                this.applyOffline(alt.getUsername());
+            } else if (!alt.getRefreshToken().isEmpty()) {
+                this.runLogin(alt.getRefreshToken(), true);
+            } else {
+                this.runLogin(alt.getToken(), false);
+            }
         }
     }
 
@@ -462,13 +392,19 @@ public class GuiAccountManager extends GuiScreen {
         }
     }
 
+    @Override
+    protected void drawFooter() {
+        this.versionChip();
+        this.hintChip("Enter", "Log in", "Esc", "Back");
+    }
+
     private void switchTab(final boolean cracked) {
         if (this.crackedTab == cracked) {
             return;
         }
         this.crackedTab = cracked;
-        this.scrollOffset = 0;
-        this.setStatus("", Theme.TEXT_DIM);
+        this.list.setContent(0.0F);
+        this.setStatus("", GlassUi.DIM);
         this.focused = cracked ? F_NAME : F_TOKEN;
     }
 
@@ -478,7 +414,7 @@ public class GuiAccountManager extends GuiScreen {
         }
         final String name = this.fields[F_NAME].trim();
         if (!name.matches("[a-zA-Z0-9_]{3,16}")) {
-            this.setStatus("Invalid username: 3-16 letters, numbers, _", Theme.DANGER);
+            this.setStatus("Invalid username: 3-16 letters, numbers, _", GlassUi.DANGER);
             return;
         }
         this.applyOffline(name);
@@ -488,7 +424,7 @@ public class GuiAccountManager extends GuiScreen {
         final String uuid = EntityPlayer.getOfflineUUID(name).toString();
         this.mc.setSession(new Session(name, uuid, "", "legacy"));
         AltManager.getInstance().upsert(new Alt(name, uuid, "", null, true));
-        this.setStatus("Offline session: " + name, Theme.FROST);
+        this.setStatus("Offline session: " + name, GlassUi.FROST);
     }
 
     private void startLogin() {
@@ -507,7 +443,7 @@ public class GuiAccountManager extends GuiScreen {
             return;
         }
         final long attemptId = beginLoginAttempt();
-        this.setStatus(isRefreshToken ? "Refreshing session..." : "Validating account...", Theme.TEXT_DIM);
+        this.setStatus(isRefreshToken ? "Refreshing session..." : "Validating account...", GlassUi.DIM);
         this.busy = true;
 
         final Thread worker = new Thread(() -> {
@@ -531,7 +467,7 @@ public class GuiAccountManager extends GuiScreen {
                             session.getUsername(), session.getPlayerID(), session.getToken(),
                             refreshToken, false));
                     this.busy = false;
-                    this.setStatus("Logged in as " + session.getUsername(), Theme.FROST);
+                    this.setStatus("Logged in as " + session.getUsername(), GlassUi.FROST);
                 });
             } catch (final Exception e) {
                 this.mc.addScheduledTask(() -> {
@@ -539,7 +475,7 @@ public class GuiAccountManager extends GuiScreen {
                         return;
                     }
                     this.busy = false;
-                    this.setStatus("Login failed: " + cleanMessage(e), Theme.DANGER);
+                    this.setStatus("Login failed: " + cleanMessage(e), GlassUi.DANGER);
                 });
             }
         }, "ColdPlay Login");
@@ -569,12 +505,12 @@ public class GuiAccountManager extends GuiScreen {
                 this.fields[F_HOST] = "";
                 this.fields[F_USER] = "";
                 this.fields[F_PASS] = "";
-                this.setStatus("Proxy cleared", Theme.TEXT_DIM);
+                this.setStatus("Proxy cleared", GlassUi.DIM);
             } else {
-                this.setStatus("Proxy set: " + active.getDisplayAddress() + " (enabled)", Theme.FROST);
+                this.setStatus("Proxy set: " + active.getDisplayAddress() + " (enabled)", GlassUi.FROST);
             }
         } catch (final IllegalArgumentException e) {
-            this.setStatus(e.getMessage(), Theme.DANGER);
+            this.setStatus(e.getMessage(), GlassUi.DANGER);
         }
     }
 

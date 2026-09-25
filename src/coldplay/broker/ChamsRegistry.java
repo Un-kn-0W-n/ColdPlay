@@ -25,7 +25,18 @@ public final class ChamsRegistry {
     private final EntityRenderSelectionSnapshot<Boolean> selection =
             new EntityRenderSelectionSnapshot<Boolean>();
 
+    // flat fill of the hidden parts only, instead of textured models
+    private boolean glow;
+
     private ChamsRegistry() {
+    }
+
+    public void setGlow(boolean glow) {
+        this.glow = glow;
+    }
+
+    public boolean isGlow() {
+        return glow;
     }
 
     public void update(Object owner, Set<Entity> next) {

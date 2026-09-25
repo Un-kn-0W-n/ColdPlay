@@ -2,6 +2,7 @@ package coldplay.gui;
 
 import coldplay.util.Animation;
 import coldplay.util.RenderUtil;
+import net.minecraft.util.ColorMath;
 import net.minecraft.util.MathHelper;
 
 /** Shared GUI colors and metrics. */
@@ -52,6 +53,17 @@ public final class Theme {
     public static int withAlpha(int argb, int alpha) {
         int clamped = MathHelper.clamp_int(alpha, 0, 255);
         return (clamped << 24) | (argb & 0x00FFFFFF);
+    }
+
+    /** Green at 1, through yellow and orange, to red at 0. */
+    public static int healthColor(float fraction) {
+        if (fraction > 0.55F) {
+            return ColorMath.lerpArgb(0xFFEFD25A, 0xFF7EE08E, (fraction - 0.55F) / 0.45F);
+        }
+        if (fraction > 0.3F) {
+            return ColorMath.lerpArgb(0xFFF59A4C, 0xFFEFD25A, (fraction - 0.3F) / 0.25F);
+        }
+        return ColorMath.lerpArgb(0xFFF0505A, 0xFFF59A4C, fraction / 0.3F);
     }
 
     /** Scales alpha; a 0 alpha counts as opaque. */

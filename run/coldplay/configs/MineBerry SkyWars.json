@@ -35,7 +35,7 @@
       "settings": {}
     },
     "KillAura": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 19,
       "settings": {
         "Players": true,
@@ -45,14 +45,8 @@
         "NPCs": false,
         "Target": "Distance",
         "Lock": "Single",
-        "Rotation Speed": [
-          38.0,
-          52.5
-        ],
-        "Pitch Speed": [
-          9.0,
-          16.0
-        ],
+        "Rotation Speed": 27.5,
+        "Humanize": true,
         "Rotation Range": 4.5,
         "FOV": 92.0,
         "CPS": [
@@ -61,7 +55,7 @@
         ],
         "Range": 3.0,
         "Raytrace": "Center",
-        "Render": true,
+        "Render": false,
         "Graph Scale": 1.0,
         "Auto Off": true
       }
@@ -87,6 +81,7 @@
         "Ignore Own Bed": false,
         "Progress Bar": true,
         "Highlight": true,
+        "Color": "Progress",
         "Highlight Color": -16711836,
         "Auto Off": false
       }
@@ -101,10 +96,17 @@
       }
     },
     "KeepSprint": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Chance": 75.0
+      }
+    },
+    "Criticals": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Mode": "Legit"
       }
     },
     "AutoThrow": {
@@ -180,6 +182,17 @@
         "Auto Off": false
       }
     },
+    "FakeLag": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Delay": [
+          260.0,
+          410.0
+        ],
+        "Auto Off": false
+      }
+    },
     "Sprint": {
       "enabled": true,
       "keyBind": 0,
@@ -208,11 +221,7 @@
     "NoFall": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {
-        "MinFallDistance": 3.0,
-        "PlaceHeight": 3.0,
-        "Auto Off": false
-      }
+      "settings": {}
     },
     "AutoPearl": {
       "enabled": true,
@@ -222,12 +231,18 @@
         "Auto Off": false
       }
     },
+    "Clutch": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Mode": "Hypixel",
+        "Auto Off": false
+      }
+    },
     "InvMove": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {
-        "Mode": "Hypixel"
-      }
+      "settings": {}
     },
     "Velocity": {
       "enabled": false,
@@ -274,6 +289,7 @@
         "Thickness": 1.0,
         "Filled": true,
         "Opacity": 93.0,
+        "Labels": true,
         "Players": true,
         "Mobs": false,
         "Animals": false,
@@ -288,6 +304,7 @@
       "enabled": false,
       "keyBind": 0,
       "settings": {
+        "Mode": "Glass",
         "Width": 0.5,
         "Players": true,
         "Mobs": false,
@@ -303,13 +320,18 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
+        "Mode": "Heads",
         "Size": 9.0,
         "Radius": 39.0,
+        "Labels": true,
         "Players": true,
         "Mobs": false,
         "Animals": false,
         "Invisible": true,
-        "Range": 256.0
+        "Range": 256.0,
+        "Player Color": -1,
+        "Mob Color": -50116,
+        "Animal Color": -11477916
       }
     },
     "NameTags": {
@@ -376,9 +398,7 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Show Model": true,
         "Health Text": true,
-        "Held + Armor": true,
         "Players": true,
         "Mobs": true,
         "Animals": false,
@@ -414,6 +434,11 @@
         "Color": -10172161,
         "Target Color": -50116
       }
+    },
+    "Ambience": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {}
     },
     "ChestStealer": {
       "enabled": true,
@@ -511,7 +536,13 @@
     "BedNotification": {
       "enabled": false,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Range": 40.0,
+        "Sound": true,
+        "Always Show": false,
+        "Distance Bars": true,
+        "Scale": 1.0
+      }
     },
     "MiddleClickFriend": {
       "enabled": true,
@@ -626,6 +657,14 @@
       "enabled": false,
       "keyBind": 0,
       "settings": {}
+    },
+    "ACLearner": {
+      "enabled": false,
+      "keyBind": 0,
+      "settings": {
+        "Probe": "Offset",
+        "Distance": 10.0
+      }
     }
   }
 }

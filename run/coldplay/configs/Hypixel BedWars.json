@@ -81,6 +81,7 @@
         "Ignore Own Bed": true,
         "Progress Bar": true,
         "Highlight": true,
+        "Color": "Progress",
         "Highlight Color": -16711836,
         "Auto Off": false
       }
@@ -102,7 +103,7 @@
       }
     },
     "Criticals": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 0,
       "settings": {
         "Mode": "Legit"
@@ -182,7 +183,7 @@
       }
     },
     "FakeLag": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Delay": [
@@ -230,13 +231,21 @@
         "Auto Off": false
       }
     },
+    "Clutch": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {
+        "Mode": "Hypixel",
+        "Auto Off": false
+      }
+    },
     "InvMove": {
       "enabled": false,
       "keyBind": 0,
       "settings": {}
     },
     "Velocity": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 0,
       "settings": {
         "Mode": "Hypixel",
@@ -280,6 +289,7 @@
         "Thickness": 1.0,
         "Filled": true,
         "Opacity": 93.0,
+        "Labels": true,
         "Players": true,
         "Mobs": false,
         "Animals": false,
@@ -294,6 +304,7 @@
       "enabled": false,
       "keyBind": 0,
       "settings": {
+        "Mode": "Glass",
         "Width": 0.5,
         "Players": true,
         "Mobs": false,
@@ -309,13 +320,18 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
+        "Mode": "Heads",
         "Size": 6.0,
         "Radius": 30.0,
+        "Labels": true,
         "Players": true,
         "Mobs": false,
         "Animals": false,
         "Invisible": true,
-        "Range": 96.0
+        "Range": 96.0,
+        "Player Color": -1,
+        "Mob Color": -50116,
+        "Animal Color": -11477916
       }
     },
     "NameTags": {
@@ -418,6 +434,11 @@
         "Color": -10172161,
         "Target Color": -50116
       }
+    },
+    "Ambience": {
+      "enabled": true,
+      "keyBind": 0,
+      "settings": {}
     },
     "ChestStealer": {
       "enabled": false,

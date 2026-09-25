@@ -4,6 +4,8 @@ import coldplay.event.EventRender2D;
 import coldplay.event.EventTarget;
 import coldplay.event.EventUpdate;
 import coldplay.friend.FriendManager;
+import coldplay.gui.Glass;
+import coldplay.gui.GlassShader;
 import coldplay.gui.Theme;
 import coldplay.hud.HudState;
 import coldplay.module.Category;
@@ -16,6 +18,7 @@ import coldplay.util.Animation;
 import coldplay.util.EntityTargets;
 import coldplay.util.RenderUtil;
 import coldplay.util.font.CustomFont;
+import coldplay.util.font.FontRef;
 import coldplay.util.font.Fonts;
 import coldplay.broker.GameStateTracker;
 import net.minecraft.block.BlockBed;
@@ -54,19 +57,42 @@ public final class BedNotification extends Module {
     private static final double ANIM_SPEED = 13.0;
     private static final String TITLE = "Bed";
 
-    private static final int COLOR_ALERT = 0xFFFF5555;
-    private static final int COLOR_SAFE = 0xFF55FF55;
+    private static final int TEXT = 0xFFF4F6F8;
+    private static final int ALERT = 0xF0505A; // alpha comes from the flash
+    private static final int NEAR_TEXT = 0xFFFF8E94;
+    private static final int NEAR_FILL = 0x2EF0505A;
+    private static final int NEAR_RIM = 0x57F0505A;
+    private static final int SAFE_TEXT = 0xFF8FE6A0;
+    private static final int SAFE_FILL = 0x217EE08E;
+    private static final int SAFE_RIM = 0x4D7EE08E;
+    private static final int SEP = 0x17FFFFFF;
+    private static final int BAR_TRACK = 0x1FFFFFFF;
 
     // Layout dimensions use scaled GUI pixels.
-    private static final int PAD = 4;
+    private static final float PAD_X = 9.0F;
+    private static final float PAD_Y = 7.5F;
+    private static final float RADIUS = 7.5F;
+    private static final float HEAD = 16.5F;
     private static final int ICON = 16;
-    private static final int ICON_GAP = 3;
-    private static final int TEXT_GAP = 8; // min gap between left and right text
-    private static final int SEP_GAP = 3;  // above and below the header line
-    private static final int ROW_GAP = 3;
-    private static final int BAR_GAP = 2;
-    private static final int BAR_H = 2;
-    private static final int MIN_W = 100;
+    private static final float ICON_GAP = 5.25F;
+    private static final float CHIP_H = 13.5F;
+    private static final float CHIP_PAD = 5.25F;
+    private static final float SEP_GAP = 6.0F; // above and below the header line
+    private static final float SEP_H = 0.75F;
+    private static final float LINE = 12.0F;
+    private static final float DOT = 4.5F;
+    private static final float DOT_GAP = 4.5F;
+    private static final float BAR_GAP = 3.75F;
+    private static final float BAR_H = 2.25F;
+    private static final float ROW_GAP = 4.5F;
+    private static final float FLASH_INSET = 6.0F; // flash highlight from the card edge
+    private static final float TEXT_GAP = 6.0F;    // min gap between left and right text
+    private static final int MIN_W = 156;
+
+    private static final FontRef TITLE_FONT = new FontRef(Fonts.GEIST_SEMIBOLD, 9.75F);
+    private static final FontRef CHIP_FONT = new FontRef(Fonts.GEIST_MONO_MEDIUM, 8.25F);
+    private static final FontRef NAME_FONT = new FontRef(Fonts.GEIST_MEDIUM, 9.375F);
+    private static final FontRef DISTANCE_FONT = new FontRef(Fonts.GEIST_MONO_MEDIUM, 9.0F);
 
     private static final Comparator<Row> ORDER =
             Comparator.comparing((Row row) -> row.band == null).thenComparingDouble(row -> row.distance);
@@ -86,7 +112,7 @@ public final class BedNotification extends Module {
     private final ItemStack bedIcon = new ItemStack(Items.bed);
     private final Map<String, Row> rows = new LinkedHashMap<String, Row>();
     private final List<Row> preview = Arrays.asList(
-            previewRow("Steve", COLOR_ALERT, 12.0D), previewRow("Alex", 0xFF5555FF, 27.0D));
+            previewRow("Steve", 0xFFFF5555, 12.0D), previewRow("Alex", 0xFF5555FF, 27.0D));
     private final Animation width = new Animation(MIN_W, ANIM_SPEED);
     private final Animation height = new Animation(0.0, ANIM_SPEED);
     private boolean tracking;
@@ -199,7 +225,10 @@ public final class BedNotification extends Module {
         if (!Fonts.isLoaded()) {
             return;
         }
-        CustomFont font = Fonts.list;
+        CustomFont titleFont = TITLE_FONT.get();
+        CustomFont chipFont = CHIP_FONT.get();
+        CustomFont nameFont = NAME_FONT.get();
+        CustomFont distanceFont = DISTANCE_FONT.get();
         boolean editing = hud.isEditing();
 
         List<Row> list = new ArrayList<Row>(rows.values());
@@ -239,26 +268,26 @@ public final class BedNotification extends Module {
             }
         }
 
-        int fontH = font.getHeight();
-        int rowH = fontH + (bars.get() ? BAR_GAP + BAR_H : 0) + ROW_GAP;
-        int rowsTop = PAD + ICON + SEP_GAP + 1 + SEP_GAP; // from the panel top
-        String status = count > 0 ? count + " near" : "Safe";
-        int statusW = font.getStringWidth(status);
-        int distanceW = font.getStringWidth("00m");
-        int contentW = ICON + ICON_GAP + font.getStringWidth(TITLE) + TEXT_GAP + statusW;
+        float rowH = LINE + (bars.get() ? BAR_GAP + BAR_H : 0.0F) + ROW_GAP;
+        float rowsTop = PAD_Y + HEAD + SEP_GAP + SEP_H + SEP_GAP; // from the panel top
+        boolean near = count > 0;
+        String status = near ? count + " near" : "Safe";
+        float chipW = CHIP_PAD + chipFont.getStringWidth(status) + CHIP_PAD;
+        int distanceW = distanceFont.getStringWidth("00m");
+        float contentW = ICON + ICON_GAP + titleFont.getStringWidth(TITLE) + TEXT_GAP + chipW;
         for (Row row : list) {
-            contentW = Math.max(contentW, font.getStringWidth(row.name) + TEXT_GAP + distanceW);
+            contentW = Math.max(contentW, DOT + DOT_GAP + nameFont.getStringWidth(row.name) + TEXT_GAP + distanceW);
         }
-        int targetW = Math.max(MIN_W, PAD + contentW + PAD);
-        int targetH = count > 0 ? rowsTop + count * rowH - ROW_GAP + PAD : PAD + ICON + PAD;
+        double targetW = Math.max(MIN_W, PAD_X + contentW + PAD_X);
+        double targetH = near ? rowsTop + count * rowH - ROW_GAP + PAD_Y : PAD_Y + HEAD + PAD_Y;
 
         double h = height.update(visible ? targetH : 0.0);
         if (h < 1.0) {
             width.set(targetW);
             return;
         }
-        int panelW = (int) Math.round(width.update(targetW));
-        int panelH = (int) Math.round(h);
+        float panelW = (float) width.update(targetW);
+        float panelH = (float) h;
 
         ScaledResolution resolution = event.getResolution();
         HudState.Position pin = hud.getOrCreate(
@@ -266,11 +295,10 @@ public final class BedNotification extends Module {
                 resolution.getScaledWidth(), resolution.getScaledHeight());
         int left = pin.x;
         int top = pin.y;
-        int right = left + panelW;
-        int bottom = top + panelH;
+        float right = left + panelW;
         float s = scale.get().floatValue();
         if (editing) {
-            hud.report("BedNotification", left, top, right, bottom, left, top, s);
+            hud.report("BedNotification", left, top, Math.round(right), Math.round(top + panelH), left, top, s);
         }
 
         long now = System.currentTimeMillis();
@@ -282,43 +310,56 @@ public final class BedNotification extends Module {
         }
 
         RenderUtil.pushScale(left, top, s);
-        // The panel wipes open from the top, so clip everything to its current height.
-        RenderUtil.beginScissor(left, top, panelW * s, panelH * s, resolution.getScaleFactor());
-        RenderUtil.drawBorderedRect(left, top, right, bottom, Theme.BODY, Theme.CONTOUR);
+        GlassShader.panel(left, top, panelW, panelH, RADIUS, Glass.SMOKE_PANEL);
         if (alert > 0.0F) {
-            RenderUtil.outline(left, top, right, bottom, 1, Theme.applyAlpha(COLOR_ALERT, alert));
+            GlassShader.stroke(left, top, panelW, panelH, RADIUS, Theme.withAlpha(ALERT, Math.round(178 * alert)));
         }
+        // The panel wipes open from the top, so clip the content to its current height.
+        RenderUtil.beginScissor(left, top, panelW * s, panelH * s, resolution.getScaleFactor());
 
-        int headerY = top + PAD;
-        float textY = headerY + (ICON - fontH) / 2.0F;
-        RenderUtil.drawItem(bedIcon, left + PAD, headerY);
-        font.drawStringWithShadow(TITLE, left + PAD + ICON + ICON_GAP, textY, Theme.TEXT);
-        font.drawStringWithShadow(status, right - PAD - statusW, textY, count > 0 ? COLOR_ALERT : COLOR_SAFE);
-        RenderUtil.hLine(left + PAD, right - PAD, headerY + ICON + SEP_GAP, Theme.applyAlpha(Theme.SEP, rowsAlpha));
+        float headerY = top + PAD_Y;
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(left + PAD_X, headerY, 0.0F);
+        RenderUtil.drawItem(bedIcon, 0, 0);
+        GlStateManager.popMatrix();
+        titleFont.drawString(TITLE, left + PAD_X + ICON + ICON_GAP, headerY + (HEAD - titleFont.getHeight()) / 2.0F, TEXT);
+        float chipX = right - PAD_X - chipW;
+        float chipY = headerY + (HEAD - CHIP_H) / 2.0F;
+        GlassShader.rect(chipX, chipY, chipW, CHIP_H, CHIP_H / 2.0F, near ? NEAR_FILL : SAFE_FILL, near ? NEAR_FILL : SAFE_FILL);
+        GlassShader.stroke(chipX, chipY, chipW, CHIP_H, CHIP_H / 2.0F, near ? NEAR_RIM : SAFE_RIM);
+        chipFont.drawString(status, chipX + CHIP_PAD, chipY + (CHIP_H - chipFont.getHeight()) / 2.0F,
+                near ? NEAR_TEXT : SAFE_TEXT);
+        int sep = Theme.applyAlpha(SEP, rowsAlpha);
+        GlassShader.rect(left + PAD_X, headerY + HEAD + SEP_GAP, panelW - PAD_X * 2.0F, SEP_H, 0.0F, sep, sep);
 
-        int x = left + PAD;
-        int innerW = panelW - PAD * 2;
+        float x = left + PAD_X;
+        float innerW = panelW - PAD_X * 2.0F;
         for (Row row : list) {
             float a = (float) row.shown.get();
             if (a < 0.05F) {
                 continue;
             }
-            int y = top + rowsTop + (int) Math.round(row.slot.get() * rowH);
+            float y = top + rowsTop + (float) row.slot.get() * rowH;
             float f = flash(row, now);
             if (f > 0.0F) {
-                RenderUtil.rectBounds(left + 1, y - 1, right - 1, y + rowH - ROW_GAP + 1,
-                        Theme.applyAlpha(COLOR_ALERT, 0.3F * f * a));
+                int glow = Theme.withAlpha(ALERT, Math.round(46 * f * a));
+                GlassShader.rect(left + FLASH_INSET, y - 1.5F, panelW - FLASH_INSET * 2.0F, rowH - ROW_GAP + 3.0F,
+                        4.5F, glow, glow);
             }
-            int heat = heat((float) closeness(row.distance, maxDistance));
+            int heat = Theme.healthColor(1.0F - (float) closeness(row.distance, maxDistance));
             String distance = Math.round(row.distance) + "m";
-            font.drawStringWithShadow(row.name, x, y, Theme.applyAlpha(row.color, a));
-            font.drawStringWithShadow(distance, x + innerW - font.getStringWidth(distance), y,
-                    Theme.applyAlpha(heat, a));
+            int dot = Theme.applyAlpha(row.color, a);
+            GlassShader.rect(x, y + (LINE - DOT) / 2.0F, DOT, DOT, DOT / 2.0F, dot, dot);
+            float nameY = y + (LINE - nameFont.getHeight()) / 2.0F;
+            nameFont.drawString(row.name, x + DOT + DOT_GAP, nameY, Theme.applyAlpha(TEXT, a));
+            distanceFont.drawString(distance, x + innerW - distanceFont.getStringWidth(distance),
+                    nameY + nameFont.getAscent() - distanceFont.getAscent(), Theme.applyAlpha(heat, a));
             if (bars.get()) {
-                int barY = y + fontH + BAR_GAP;
-                RenderUtil.rectBounds(x, barY, x + innerW, barY + BAR_H, Theme.applyAlpha(Theme.WELL, a));
-                RenderUtil.rectBounds(x, barY, x + (int) Math.round(innerW * row.fill.get()), barY + BAR_H,
-                        Theme.applyAlpha(heat, a));
+                float barY = y + LINE + BAR_GAP;
+                int track = Theme.applyAlpha(BAR_TRACK, a);
+                int fill = Theme.applyAlpha(heat, a);
+                GlassShader.rect(x, barY, innerW, BAR_H, BAR_H / 2.0F, track, track);
+                GlassShader.rect(x, barY, innerW * (float) row.fill.get(), BAR_H, BAR_H / 2.0F, fill, fill);
             }
         }
 
@@ -382,13 +423,6 @@ public final class BedNotification extends Module {
 
     private static double closeness(double distance, int range) {
         return MathHelper.clamp_double(1.0D - distance / range, 0.0D, 1.0D);
-    }
-
-    /** Green through yellow to red as the player closes in. */
-    private static int heat(float closeness) {
-        int red = closeness < 0.5F ? 0x55 + Math.round(0xAA * closeness * 2.0F) : 0xFF;
-        int green = closeness < 0.5F ? 0xFF : 0xFF - Math.round(0xAA * (closeness - 0.5F) * 2.0F);
-        return RenderUtil.rgb(red, green, 0x55);
     }
 
     /** Eased 1 to 0 over FLASH_MS after the row's last band crossing. */

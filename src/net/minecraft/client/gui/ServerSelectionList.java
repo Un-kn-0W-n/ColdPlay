@@ -1,35 +1,40 @@
 package net.minecraft.client.gui;
 
-import coldplay.gui.BackgroundShader;
 import com.google.common.collect.Lists;
 import java.util.List;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ServerList;
 import net.minecraft.client.network.LanServerDetector;
-import net.minecraft.client.renderer.Tessellator;
 
-public class ServerSelectionList extends GuiListExtended
+/** Saved servers, then the LAN scan row, then detected LAN games; the multiplayer screen draws them. */
+public class ServerSelectionList
 {
+    /** One row of the multiplayer list, drawn in card coordinates. */
+    public interface Entry
+    {
+        float height();
+
+        void draw(int index, float x, float y, float w, int mouseX, int mouseY, boolean hover, boolean selected);
+    }
+
     private final GuiMultiplayer owner;
     private final List<ServerListEntryNormal> serverListInternet = Lists.<ServerListEntryNormal>newArrayList();
     private final List<ServerListEntryLanDetected> serverListLan = Lists.<ServerListEntryLanDetected>newArrayList();
-    private final IGuiListEntry lanScanEntry = new ServerListEntryLanScan();
+    private final Entry lanScanEntry = new ServerListEntryLanScan();
     private int selectedSlotIndex = -1;
 
-    public ServerSelectionList(GuiMultiplayer ownerIn, Minecraft mcIn, int widthIn, int heightIn, int topIn, int bottomIn, int slotHeightIn)
+    public ServerSelectionList(GuiMultiplayer ownerIn)
     {
-        super(mcIn, widthIn, heightIn, topIn, bottomIn, slotHeightIn);
         this.owner = ownerIn;
     }
 
     /**
-     * Gets the IGuiListEntry object for the given index
+     * Gets the Entry object for the given index
      */
-    public IGuiListEntry getListEntry(int index)
+    public Entry getListEntry(int index)
     {
         if (index < this.serverListInternet.size())
         {
-            return (IGuiListEntry)this.serverListInternet.get(index);
+            return this.serverListInternet.get(index);
         }
         else
         {
@@ -42,27 +47,24 @@ public class ServerSelectionList extends GuiListExtended
             else
             {
                 --index;
-                return (IGuiListEntry)this.serverListLan.get(index);
+                return this.serverListLan.get(index);
             }
         }
     }
 
-    protected int getSize()
+    public int getSize()
     {
         return this.serverListInternet.size() + 1 + this.serverListLan.size();
+    }
+
+    public int countSaved()
+    {
+        return this.serverListInternet.size();
     }
 
     public void setSelectedSlotIndex(int selectedSlotIndexIn)
     {
         this.selectedSlotIndex = selectedSlotIndexIn;
-    }
-
-    /**
-     * Returns true if the element passed in is currently selected
-     */
-    protected boolean isSelected(int slotIndex)
-    {
-        return slotIndex == this.selectedSlotIndex;
     }
 
     public int func_148193_k()
@@ -86,32 +88,7 @@ public class ServerSelectionList extends GuiListExtended
 
         for (LanServerDetector.LanServer lanserverdetector$lanserver : p_148194_1_)
         {
-            this.serverListLan.add(new ServerListEntryLanDetected(this.owner, lanserverdetector$lanserver));
+            this.serverListLan.add(new ServerListEntryLanDetected(lanserverdetector$lanserver));
         }
-    }
-
-    protected int getScrollBarX()
-    {
-        return super.getScrollBarX() + 30;
-    }
-
-    /**
-     * Gets the width of the list
-     */
-    public int getListWidth()
-    {
-        return super.getListWidth() + 85;
-    }
-
-    @Override
-    protected void drawContainerBackground(Tessellator tessellator)
-    {
-        BackgroundShader.drawListPanel(this.left, this.top, this.right, this.bottom);
-    }
-
-    @Override
-    protected void overlayBackground(int startY, int endY, int startAlpha, int endAlpha)
-    {
-        BackgroundShader.drawListMask(this.left, this.right, startY, endY, Math.max(startAlpha, endAlpha));
     }
 }
