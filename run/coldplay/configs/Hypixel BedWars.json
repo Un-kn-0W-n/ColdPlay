@@ -320,18 +320,14 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Mode": "Heads",
+        "Mode": "Triangle",
         "Size": 6.0,
         "Radius": 30.0,
-        "Labels": true,
         "Players": true,
         "Mobs": false,
         "Animals": false,
         "Invisible": true,
-        "Range": 96.0,
-        "Player Color": -1,
-        "Mob Color": -50116,
-        "Animal Color": -11477916
+        "Range": 96.0
       }
     },
     "NameTags": {

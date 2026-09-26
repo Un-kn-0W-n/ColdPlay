@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 /** Cleaning mode per item key or category key; an item entry overrides its category's. */
-public class CleanerSetting extends AbstractItemPickerSetting {
+public class CleanerSetting extends Setting<Void> {
 
     // declaration order is the click cycle, with unset after IGNORE
     public enum CleanerMode { DROP, KEEP_ONE, IGNORE }
@@ -20,7 +20,7 @@ public class CleanerSetting extends AbstractItemPickerSetting {
     private final Map<String, CleanerMode> modes = new LinkedHashMap<>();
 
     public CleanerSetting(final String name) {
-        super(name);
+        super(name, null);
     }
 
     public Map<String, CleanerMode> getModes() { return modes; }
@@ -61,10 +61,6 @@ public class CleanerSetting extends AbstractItemPickerSetting {
         }
         return modes.get(HotbarSetting.categoryRef(HotbarSetting.bucket(stack)));
     }
-
-    @Override
-    public List<HotbarSetting.Category> getCategories() { return HotbarSetting.sharedCategories(); }
-
 
     @Override
     public CleanerSetting describe(final String d) {

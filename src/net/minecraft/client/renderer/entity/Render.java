@@ -86,13 +86,6 @@ public abstract class Render<T extends Entity> implements IEntityRenderer
      */
     protected abstract ResourceLocation getEntityTexture(T entity);
 
-    // ColdPlay >>> the skin or mob texture, for Arrows Heads
-    public ResourceLocation coldplayTexture(T entity)
-    {
-        return this.getEntityTexture(entity);
-    }
-    // ColdPlay <<<
-
     protected boolean bindEntityTexture(T entity)
     {
         ResourceLocation resourcelocation = this.getEntityTexture(entity);

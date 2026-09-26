@@ -27,7 +27,8 @@ public final class Icons {
         SWORD, MOVE, WRENCH, EYE, SNOWFLAKE, SLIDERS, LAYOUT,
         USER, USERS, SERVERS, GLOBE, DOCUMENT, POWER,
         CHEVRON_UP, PENCIL, REFRESH, TRASH, PLUS, PLAY, LINK, WIFI, KEY, LOGIN, LOCK,
-        MONITOR, KEYBOARD, SPEAKER, LAYERS, SHIRT, CHAT, PULSE, SPARKLE, CUBE, STAR, HEART
+        MONITOR, KEYBOARD, SPEAKER, LAYERS, SHIRT, CHAT, PULSE, SPARKLE, CUBE, STAR, HEART,
+        ARROW_UP_RIGHT, BLOCKED
     }
 
     private static final Map<String, DynamicTexture> baked = new HashMap<String, DynamicTexture>();
@@ -283,6 +284,14 @@ public final class Icons {
                         13.5, 5, 19, 6.5, 19, 10, 19, 15.6, 12, 20, 12, 20);
                 heart.closePath();
                 g.draw(heart);
+                break;
+            case ARROW_UP_RIGHT:
+                g.draw(new Line2D.Double(7.2, 16.8, 16.8, 7.2));
+                g.draw(poly(9.6, 7.2, 16.8, 7.2, 16.8, 14.4));
+                break;
+            case BLOCKED:
+                g.draw(new Ellipse2D.Double(3.9, 3.9, 16.2, 16.2));
+                g.draw(new Line2D.Double(6.3, 17.7, 17.7, 6.3));
                 break;
             default:
                 break;

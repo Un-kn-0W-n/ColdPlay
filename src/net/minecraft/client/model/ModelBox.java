@@ -246,12 +246,6 @@ public class ModelBox {
 		}
 	}
 
-	// ColdPlay >>> the face texture, for Arrows Heads
-	public TexturedQuad coldplayFront() {
-		return this.quadList[4];
-	}
-	// ColdPlay <<<
-
 	public ModelBox setBoxName(String name) {
 		this.boxName = name;
 		return this;

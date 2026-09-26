@@ -18,9 +18,12 @@ public final class ConfigCodec {
 
     public JsonObject encodeRoot(ModuleManager moduleManager,
                                  Map<Category, ConfigManager.PanelState> panelStates,
-                                 HudState hudState, GuiStyle guiStyle, int[] milkWindow) {
+                                 HudState hudState, GuiStyle guiStyle, int[] milkWindow, String profile) {
         JsonObject root = new JsonObject();
         root.addProperty("guiStyle", guiStyle.name());
+        if (profile != null) {
+            root.addProperty("profile", profile);
+        }
         if (milkWindow != null) {
             JsonObject window = new JsonObject();
             window.addProperty("x", milkWindow[0]);
@@ -67,6 +70,15 @@ public final class ConfigCodec {
         try {
             JsonObject window = root.getAsJsonObject("milkWindow");
             return new int[]{window.get("x").getAsInt(), window.get("y").getAsInt()};
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /** The profile last loaded or saved over, null if none. */
+    public String readProfile(JsonObject root) {
+        try {
+            return root.get("profile").getAsString();
         } catch (Exception ignored) {
             return null;
         }

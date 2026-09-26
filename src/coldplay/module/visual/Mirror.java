@@ -24,7 +24,7 @@ import net.minecraft.src.Config;
 import net.minecraft.util.MathHelper;
 
 public final class Mirror extends Module {
-    static final int WIDTH = 200, HEIGHT = 80;
+    public static final int WIDTH = 200, HEIGHT = 80;
     static final long INTERVAL_NANOS = 33_333_334L;
 
     private final NumberSetting width = add(new NumberSetting("Width", WIDTH, 80, 800, 1)

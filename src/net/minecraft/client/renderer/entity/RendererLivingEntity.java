@@ -660,7 +660,9 @@ public abstract class RendererLivingEntity<T extends EntityLivingBase> extends R
     {
         if (!Reflector.RenderLivingEvent_Specials_Pre_Constructor.exists() || !Reflector.postForgeBusEvent(Reflector.RenderLivingEvent_Specials_Pre_Constructor, new Object[] {entity, this, Double.valueOf(x), Double.valueOf(y), Double.valueOf(z)}))
         {
-            if (this.canRenderName(entity))
+            // ColdPlay >>> NameTags draws its own badge
+            if (this.canRenderName(entity) && !coldplay.broker.NameTagRegistry.getInstance().hidesName(entity))
+            // ColdPlay <<<
             {
                 double d0 = entity.getDistanceSqToEntity(this.renderManager.livingPlayer);
                 float f = entity.isSneaking() ? NAME_TAG_RANGE_SNEAK : NAME_TAG_RANGE;

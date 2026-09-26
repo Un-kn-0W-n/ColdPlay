@@ -263,11 +263,12 @@ public class GuiIngame extends Gui {
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
         GlStateManager.disableLighting();
         GlStateManager.enableAlpha();
-        // ColdPlay >>> HUD drag update + EventRender2D
+        // ColdPlay >>> HUD drag update, editor grid + EventRender2D
         if (this.mc.currentScreen instanceof coldplay.gui.hud.HudEditScreen) {
-            ((coldplay.gui.hud.HudEditScreen) this.mc.currentScreen).updateDrag(
-                    org.lwjglx.input.Mouse.getX() * i / this.mc.displayWidth,
+            coldplay.gui.hud.HudEditScreen editor = (coldplay.gui.hud.HudEditScreen) this.mc.currentScreen;
+            editor.updateDrag(org.lwjglx.input.Mouse.getX() * i / this.mc.displayWidth,
                     j - org.lwjglx.input.Mouse.getY() * j / this.mc.displayHeight - 1);
+            editor.drawBlueprint();
         }
         coldplay.ColdPlay.post(new coldplay.event.EventRender2D(scaledresolution));
         // ColdPlay <<<

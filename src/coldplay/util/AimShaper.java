@@ -5,41 +5,11 @@ import net.minecraft.util.MathHelper;
 import java.util.Random;
 
 /**
- * Turn shaping for one rotation producer: an accelerating, varying, resting hand instead of a
- * constant slew. Hold one instance per owner, since the state is the hand's and not the broker's.
- *
- * <h3>Why this exists</h3>
- *
- * <p>A producer that hands the broker a fixed degrees-per-tick draws a square wave: the look
- * crosses the gap at exactly the cap, lands dead on the aim point, and then reports a turn rate of
- * zero until the target moves. Yaw and pitch also arrive at the same rate, so their ratio is
- * exactly one. Each of those is trivially separable from a recording of a hand, and none of them
- * needs a clever detector to spot.
- *
- * <p>This shapes the same request into something with the statistics of a hand: the rate ramps up
- * and brakes early, wanders tick to tick, carries pitch slower than yaw by a ratio that itself
- * moves, lets the aim point drift around the hitbox instead of pinning the centroid, throws past a
- * distant goal and corrects back onto it, and stops moving entirely for short rests.
- *
- * <h3>The ceiling is honoured, and it is the caller's job to make it human</h3>
- *
- * <p>Everything is derived from the one speed ceiling passed into {@link #step}, and shaped rates
- * only ever sit at or below it. The broker's per-tick rate limit is therefore still exactly the
- * setting the user chose: shaping spends part of the budget, it never borrows against it.
- *
- * <p>That cuts both ways, and it is the limit of what this class can do. Shape is not magnitude:
- * handed a ceiling no wrist could reach, this reproduces the curve of a hand at a speed that is not
- * one, and the curve is the part nobody measures first. A caller that wants the result to survive
- * an aggregate check must clamp the ceiling before passing it - see {@link HumanLimits#turnRate} -
- * because nothing below this line will do it for them.
- *
- * <h3>Per-tick call contract</h3>
- *
- * <p>Call {@link #drift()} once per tick and {@link #step} once per tick, in that order. They are
- * not independent: the rest counter couples them, so while a rest runs the drift freezes and draws
- * no randomness, and {@code step} re-requests the look the broker already holds. Calling them out
- * of order, twice, or only one of them pulls the rest apart from the drift and the result stops
- * reading as a hand.
+ * Shapes one producer's turn like a hand on a mouse. While the look sits inside a band around the
+ * goal the hand only trembles or holds still, and once it leaves the band a correction throws it
+ * back in. The constants were fit by replaying recorded legit PvP fights (Kaggle "Aim Dataset for
+ * Minecraft", 2219 players) through this class and matching per-tick speed, acceleration, idle
+ * share, pitch travel and yaw/pitch coupling.
  *
  * <p>Randomness comes from the caller's {@link Random} so that a seeded owner replays exactly.
  */
@@ -58,103 +28,63 @@ public final class AimShaper {
         }
     }
 
-    /** Aim-point offsets as a fraction of each hitbox dimension. Immutable. */
-    public static final class Drift {
-        public final double x, y, z;
-
-        Drift(double x, double y, double z) {
-            this.x = x;
-            this.y = y;
-            this.z = z;
-        }
-    }
-
-    /** The centred, motionless drift a reset hand starts from. */
-    public static final Drift REST = new Drift(0.0, 0.0, 0.0);
-
-    // The turn curve. A hand leans into a turn harder than it brakes out of one, and it starts
-    // braking well before it arrives rather than stopping dead on the mark.
+    // A hand leans into a correction harder than it brakes out of one.
     private static final double ACCEL = 0.34;
     private static final double DECEL = 0.24;
-    private static final double BRAKE_TICKS = 4.0;
+    private static final double BRAKE_TICKS = 6.0;
 
-    // One shared gain drives both axes, so a fast yaw tick is also a fast pitch tick. The walk is
-    // mean reverting, so the speed is correlated across ticks like a hand rather than white dither,
-    // and it lives in log space so the tail is heavy: mostly small steps with the odd flick.
+    // One shared log-space gain for both axes, so a fast yaw tick is also a fast pitch tick.
     private static final double GAIN_PULL = 0.30;
     private static final double GAIN_STEP = 0.26;
     private static final double GAIN_CLAMP = 0.33;
-    // The hand cruises below the ceiling. SPEED_MID * e^GAIN_CLAMP stays under 1, so the shaped
-    // rate never pins itself to the cap and never draws the flat top that gave the old code away.
-    // The band still has to sit high enough that an ordinary strafe is inside it, or the shaping
-    // turns into a speed limit and the aim is left behind everything that moves.
     private static final double SPEED_MID = 0.70;
     private static final double SPEED_MIN = 0.42;
 
-    // Pitch is a wrist movement against a physically shorter axis, so it lags yaw. The ratio
-    // wanders on its own walk, because a fixed ratio is just as separable as a fixed rate.
+    // Pitch runs slower than yaw by a ratio that wanders.
     private static final double PITCH_PULL = 0.22;
     private static final double PITCH_STEP = 0.18;
     private static final double PITCH_CLAMP = 0.34;
     private static final double PITCH_MID = 0.58;
     private static final double PITCH_MIN = 0.30;
     private static final double PITCH_MAX = 0.92;
+    private static final double PITCH_HARD = 0.7; // pitch never moves more than this share of the ceiling
 
-    // Where on the hitbox the aim settles. Without this the look parks on the exact centroid and
-    // holds it to the last float, which no hand does.
-    private static final double DRIFT_PULL = 0.18; // about five ticks of memory
-    private static final double DRIFT_STEP = 0.035;
-    // Worst case offset is CLAMP * (SOLO + SHARE) = 0.226 of a hitbox dimension, so even a pinned
-    // walk stays in the torso rather than sliding onto the shins, where the reach ray would miss.
-    private static final double DRIFT_CLAMP = 0.16;
-    // A hand drags the aim point along a line; it does not jitter each axis independently.
-    private static final double DRIFT_SHARE = 0.75; // share^2 + solo^2 = 1 keeps the amplitude
-    private static final double DRIFT_SOLO = 0.66;
-    private static final double DRIFT_VERTICAL = 0.9; // pitch carries a little less than yaw
+    // How deep into the band a correction aims: 0 is the edge, 1 the goal. Pitch settles shallow.
+    private static final double YAW_DEPTH_MIN = 0.5;
+    private static final double PITCH_DEPTH_MIN = 0.1;
+    private static final double PITCH_DEPTH_MAX = 0.6;
+    private static final double SETTLE = 0.5; // a correction ends inside this share of the band
 
-    // The hand moves in bursts and rests between them: roughly nine ticks moving, five resting.
-    // The rest is deliberately short. A pause is a hand detail, but a long one is a lost fight.
-    private static final double MOVE_KEEP = 0.89;
-    private static final double REST_KEEP = 0.80;
-    private static final int MOVE_MAX = 200;
-    private static final int REST_MAX = 10;
-    // A rest is only for a target that is holding still. Past this share of the ceiling the goal
-    // is moving fast enough that pausing would drop the aim behind it, so the hand stays on it.
-    private static final double REST_BUSY = 0.12;
+    // Log-normal speed noise per correction tick. Matching the target's own motion gets less, or the
+    // lag on a fast strafe random-walks off the hitbox.
+    private static final double JITTER = 0.5;
+    private static final double PURSUIT_JITTER = 0.15;
+    private static final double TREMOR = 0.6; // degrees
+    private static final double TREMOR_FULL = 10.0; // ceiling below which the tremor calms with it
+    private static final double TREMOR_PULL = 0.6;
+    private static final double TREMOR_PITCH = 0.7;
+    private static final double COUPLING = 0.15; // pitch wobble per degree of yaw travel
+    private static final double STILL = 0.35; // chance a resting tick starts a still run
+    private static final double STILL_KEEP = 0.45;
+    private static final int STILL_MAX = 20;
 
-    // Overshoot. Braking toward a goal and never passing it makes every approach monotone, and a
-    // monotone approach is not what a limb does: an aimed movement is one ballistic throw that
-    // lands off the mark plus one or two corrections back onto it. The sign of the final approach
-    // is therefore a usable feature all by itself, and without this it is constant.
-    //
-    // The bias is rolled once per throw from the error at the time, then decays, so it is still
-    // present when the look arrives - that is what puts the look past the mark - and gone shortly
-    // after. It deliberately survives the arrival by a few ticks rather than tracking the error
-    // down to nothing, which would just be a slower brake.
-    private static final double OVERSHOOT_GAIN = 0.14;
-    private static final double OVERSHOOT_PITCH = 0.6; // the wrist commits less on the short axis
-    // Slow enough that a long throw still carries a couple of degrees of bias when the look
-    // arrives. Much faster and the overshoot decays to less than one mouse count before it lands,
-    // which the broker's quantization then rounds away entirely - a correction nobody can see is
-    // not one. Much slower and it stops being a correction and starts being a standing offset.
-    private static final double OVERSHOOT_DECAY = 0.12;
-    private static final double OVERSHOOT_MAX = 6.0; // degrees, so a long throw cannot fling the aim
-    // Small corrections are not thrown, they are placed. Only a gap this wide starts a new throw.
+    // Overshoot on long throws, then corrected back.
     private static final double THROW_ERROR = 12.0;
-    // A decaying bias never reaches zero, and one that lingers stops being a correction and becomes
-    // a permanent offset between the aim point and what is asked for. Well under one mouse count,
-    // so dropping it here is invisible on the wire and leaves a settled hand asking for the aim
-    // point exactly, which is the property the rest of the aim path is entitled to rely on.
+    private static final double OVERSHOOT_GAIN = 0.14;
+    private static final double OVERSHOOT_PITCH = 0.6;
+    private static final double OVERSHOOT_DECAY = 0.12;
+    private static final double OVERSHOOT_MAX = 6.0;
     private static final double OVERSHOOT_EPSILON = 0.01;
 
     private final Random random;
 
     private double yawRate, pitchRate;
     private double gain, pitchGain;
-    private double driftHand, driftX, driftY, driftZ;
+    private double tremorYaw, tremorPitch;
     private double biasYaw, biasPitch;
-    private boolean throwing;
-    private int moveTicks, restTicks;
+    private double depthYaw, depthPitch;
+    private boolean fixYaw, fixPitch, throwing;
+    private int still;
     private float lastYaw, lastPitch;
     private boolean hasLast;
 
@@ -172,112 +102,100 @@ public final class AimShaper {
         return Math.abs(want - from);
     }
 
+    /** The largest a throw's bias can ever be, in degrees. */
+    public static double overshootLimit() {
+        return OVERSHOOT_MAX;
+    }
+
     /** Clears every scrap of hand state. Draws no randomness. */
     public void reset() {
         yawRate = pitchRate = 0.0;
         gain = pitchGain = 0.0;
-        driftHand = driftX = driftY = driftZ = 0.0;
+        tremorYaw = tremorPitch = 0.0;
         biasYaw = biasPitch = 0.0;
-        throwing = false;
-        moveTicks = restTicks = 0;
+        depthYaw = depthPitch = 0.0;
+        fixYaw = fixPitch = throwing = false;
+        still = 0;
         lastYaw = lastPitch = 0.0F;
         hasLast = false;
     }
 
-    /** A new target is turned to from rest, and gets a fresh burst before its first pause. */
-    public void retarget() {
-        reset();
-        moveTicks = burst(MOVE_KEEP, MOVE_MAX);
-    }
-
     /**
-     * Steps the aim-point walk. Call once per tick, before {@link #step}. A resting hand does not
-     * wander either, so while a rest runs the offsets freeze and no randomness is drawn.
-     */
-    public Drift drift() {
-        if (restTicks <= 0) {
-            driftHand = walk(driftHand, DRIFT_PULL, DRIFT_STEP, DRIFT_CLAMP);
-            driftX = walk(driftX, DRIFT_PULL, DRIFT_STEP, DRIFT_CLAMP);
-            driftY = walk(driftY, DRIFT_PULL, DRIFT_STEP, DRIFT_CLAMP);
-            driftZ = walk(driftZ, DRIFT_PULL, DRIFT_STEP, DRIFT_CLAMP);
-        }
-        return new Drift(share(driftX), share(driftY) * DRIFT_VERTICAL, share(driftZ));
-    }
-
-    /**
-     * One tick of turn shaping. Call once per tick, after {@link #drift()}.
+     * One tick of turn shaping. Call once per tick.
      *
-     * @param ceiling the owner's speed setting in degrees per tick; the shaped rates stay under it
-     * @param onTarget whether freezing here would still be aimed at the goal, since a hand only
-     *                 rests once it is already pointed at something
+     * @param ceiling   the owner's speed setting in degrees per tick; no axis moves faster
+     * @param yawBand   half-width in degrees of the region around the goal the hand is content in
+     * @param pitchBand the same for pitch
      */
     public Step step(float fromYaw, float fromPitch, float wantYaw, float wantPitch,
-                     double ceiling, boolean onTarget) {
-        // How far the goal itself travelled since the last tick, which is the target's angular
-        // speed. Matching it is what the turn has to do before any of the gap is closed at all.
+                     double ceiling, double yawBand, double pitchBand) {
+        // The goal's own motion since last tick; a correction has to match it before it closes anything.
         double followYaw = hasLast ? yawError(wantYaw, lastYaw) : 0.0;
         double followPitch = hasLast ? pitchError(wantPitch, lastPitch) : 0.0;
         lastYaw = wantYaw;
         lastPitch = wantPitch;
         hasLast = true;
 
-        // A hand does not take its thumb off something that is still moving.
-        boolean busy = followYaw + followPitch > ceiling * REST_BUSY;
-        if (restTicks > 0 && (!onTarget || busy)) {
-            restTicks = 0; // the target walked out from under the frozen ray
-            moveTicks = burst(MOVE_KEEP, MOVE_MAX);
-        }
+        double errorYaw = MathHelper.wrapAngleTo180_double(wantYaw - fromYaw);
+        double errorPitch = wantPitch - fromPitch;
         gain = walk(gain, GAIN_PULL, GAIN_STEP, GAIN_CLAMP);
         pitchGain = walk(pitchGain, PITCH_PULL, PITCH_STEP, PITCH_CLAMP);
-
+        if (!fixYaw && Math.abs(errorYaw) > yawBand) {
+            fixYaw = true;
+            depthYaw = YAW_DEPTH_MIN + (1.0 - YAW_DEPTH_MIN) * random.nextDouble();
+        }
+        if (!fixPitch && Math.abs(errorPitch) > pitchBand) {
+            fixPitch = true;
+            depthPitch = PITCH_DEPTH_MIN + (PITCH_DEPTH_MAX - PITCH_DEPTH_MIN) * random.nextDouble();
+        }
         double yawCeiling = ceiling * clamp(SPEED_MID * Math.exp(gain), SPEED_MIN, 1.0);
         double pitchCeiling = yawCeiling * clamp(PITCH_MID * Math.exp(pitchGain), PITCH_MIN, PITCH_MAX);
+        double gapYaw = fixYaw ? outside(errorYaw, yawBand * (1.0 - depthYaw)) : 0.0;
+        double gapPitch = fixPitch ? outside(errorPitch, pitchBand * (1.0 - depthPitch)) : 0.0;
+        yawRate = fixYaw ? ramp(yawRate, yawCeiling, ceiling, Math.abs(gapYaw), gapYaw != 0.0 ? followYaw : 0.0) : 0.0;
+        pitchRate = fixPitch ? ramp(pitchRate, pitchCeiling, ceiling, Math.abs(gapPitch), gapPitch != 0.0 ? followPitch : 0.0) : 0.0;
+        if (fixYaw && (gapYaw == 0.0 || Math.abs(errorYaw) < yawBand * SETTLE)) {
+            fixYaw = false;
+        }
+        if (fixPitch && (gapPitch == 0.0 || Math.abs(errorPitch) < pitchBand * SETTLE)) {
+            fixPitch = false;
+        }
+        overshoot(gapYaw, gapPitch);
 
-        yawRate = ramp(yawRate, yawCeiling, ceiling, yawError(wantYaw, fromYaw), followYaw);
-        pitchRate = ramp(pitchRate, pitchCeiling, ceiling, pitchError(wantPitch, fromPitch), followPitch);
-
-        if (restTicks > 0) {
-            restTicks--;
-            if (restTicks == 0) {
-                moveTicks = burst(MOVE_KEEP, MOVE_MAX);
-            }
-            // A still hand carries no correction, and letting one survive the pause would pop the
-            // look the tick the rest ends.
+        double moveYaw, movePitch;
+        if (yawRate > 0.0 || pitchRate > 0.0) {
+            double noise = random.nextGaussian();
+            moveYaw = jitter(clamp(gapYaw + biasYaw, -yawRate, yawRate), followYaw, noise);
+            movePitch = jitter(clamp(gapPitch + biasPitch, -pitchRate, pitchRate), followPitch, noise * 0.5);
+            still = 0;
+        } else {
             biasYaw = biasPitch = 0.0;
             throwing = false;
-            // Re-requesting the look the broker already holds steps it by nothing, so the wire look
-            // repeats exactly the way it does while a real hand is off the mouse.
-            return new Step(fromYaw, fromPitch, yawRate, pitchRate);
+            if (still > 0 || random.nextDouble() < STILL) {
+                still = still > 0 ? still - 1 : burst();
+                return new Step(fromYaw, fromPitch, 0.0, 0.0);
+            }
+            moveYaw = movePitch = 0.0;
         }
-        if (moveTicks > 0) {
-            moveTicks--;
-        }
-        // A rest that is due waits for the ray to be on a target that is holding still, so it
-        // never starts off one and never starts on one that is about to run out from under it.
-        if (moveTicks <= 0 && onTarget && !busy) {
-            restTicks = burst(REST_KEEP, REST_MAX);
-        }
-        overshoot(fromYaw, fromPitch, wantYaw, wantPitch);
-        return new Step((float) (wantYaw + biasYaw), (float) (wantPitch + biasPitch),
-                yawRate, pitchRate);
+        double shared = random.nextGaussian();
+        double tremor = TREMOR * Math.min(1.0, ceiling / TREMOR_FULL);
+        tremorYaw += -TREMOR_PULL * tremorYaw + tremor * (0.7 * shared + 0.7 * random.nextGaussian());
+        tremorPitch += -TREMOR_PULL * tremorPitch + tremor * TREMOR_PITCH * random.nextGaussian();
+        moveYaw = clamp(moveYaw + tremorYaw, -ceiling, ceiling);
+        // A hand sweeping sideways does not hold its height to the pixel.
+        movePitch += tremorPitch + COUPLING * Math.abs(moveYaw) * random.nextGaussian();
+        movePitch = clamp(movePitch, -ceiling * PITCH_HARD, ceiling * PITCH_HARD);
+        return new Step((float) (fromYaw + moveYaw), (float) (fromPitch + movePitch),
+                Math.abs(moveYaw), Math.abs(movePitch));
     }
 
-    /**
-     * Throws the requested look past a distant goal and takes the bias back out over the ticks that
-     * follow. Only the requested angle moves: the rates, the rest logic and the caller's own
-     * on-target test all still measure against the true aim point, so a throw changes the path the
-     * look takes without changing when the hand decides it has arrived.
-     */
-    private void overshoot(float fromYaw, float fromPitch, float wantYaw, float wantPitch) {
-        double signedYaw = MathHelper.wrapAngleTo180_double(wantYaw - fromYaw);
-        double signedPitch = wantPitch - fromPitch;
-        double error = Math.abs(signedYaw) + Math.abs(signedPitch);
+    private void overshoot(double gapYaw, double gapPitch) {
+        double error = Math.abs(gapYaw) + Math.abs(gapPitch);
         if (!throwing && error > THROW_ERROR) {
             throwing = true;
-            // Rolled per throw rather than fixed: a constant overshoot ratio is its own giveaway.
-            double gain = OVERSHOOT_GAIN * random.nextDouble();
-            biasYaw = clamp(signedYaw * gain, -OVERSHOOT_MAX, OVERSHOOT_MAX);
-            biasPitch = clamp(signedPitch * gain * OVERSHOOT_PITCH, -OVERSHOOT_MAX, OVERSHOOT_MAX);
+            double g = OVERSHOOT_GAIN * random.nextDouble();
+            biasYaw = clamp(gapYaw * g, -OVERSHOOT_MAX, OVERSHOOT_MAX);
+            biasPitch = clamp(gapPitch * g * OVERSHOOT_PITCH, -OVERSHOOT_MAX, OVERSHOOT_MAX);
         } else if (throwing && error < THROW_ERROR * 0.5) {
             throwing = false;
         }
@@ -291,52 +209,36 @@ public final class AimShaper {
         }
     }
 
-    /** The largest a throw's bias can ever be, in degrees. Exposed so a check can bound it. */
-    public static double overshootLimit() {
-        return OVERSHOOT_MAX;
+    private static double jitter(double move, double follow, double noise) {
+        double pursuit = Math.signum(move) * Math.min(Math.abs(move), follow);
+        return pursuit * Math.exp(PURSUIT_JITTER * noise) + (move - pursuit) * Math.exp(JITTER * noise);
     }
 
-    private double share(double solo) {
-        return solo * DRIFT_SOLO + driftHand * DRIFT_SHARE;
+    /** How far {@code error} reaches past {@code keep}, signed; zero when it is inside. */
+    private static double outside(double error, double keep) {
+        return Math.abs(error) > keep ? error - Math.signum(error) * keep : 0.0;
     }
 
     /** Geometric run length: one tick, plus a coin that keeps landing heads. */
-    private int burst(double keep, int cap) {
+    private int burst() {
         int ticks = 1;
-        while (ticks < cap && random.nextDouble() < keep) {
+        while (ticks < STILL_MAX && random.nextDouble() < STILL_KEEP) {
             ticks++;
         }
         return ticks;
     }
 
-    /** One step of a mean-reverting walk: the pull forgets the past, the gaussian adds the wander. */
     private double walk(double state, double pull, double step, double clamp) {
         return clamp(state - pull * state + step * random.nextGaussian(), -clamp, clamp);
     }
 
     /**
-     * Eases a rate toward a ceiling that drops as the error closes, so the turn brakes into its
-     * target instead of stopping on it. There is deliberately no floor: a rate under one mouse
-     * count snaps to nothing and carries in the broker's remainder, which is how a settled aim
-     * produces the single-count corrections and idle ticks a real one does.
-     *
-     * <p>{@code follow} is the goal's own speed and is added on top of the braking term rather
-     * than being braked against. Without it this is a plain proportional controller, which parks
-     * at whatever error makes {@code error / BRAKE_TICKS} equal the target's angular speed: a
-     * permanent lag of {@link #BRAKE_TICKS} ticks of target motion that no slider setting can
-     * close, because the brake and not the ceiling is what binds. Carrying the goal's speed
-     * separately drops the settled lag to the one tick that sampling costs, and a target holding
-     * still contributes nothing here, so it still gets braked into exactly as before.
-     *
-     * <p>Note which ceiling bounds which term. {@code shaped} is the hand's cruising band and it
-     * bounds the part that closes the gap; only {@code hard}, the user's actual setting, bounds
-     * the total. Matching a target's motion is not a stylistic choice a hand gets to make, so it
-     * is not shaped: were {@code follow} held under the cruising band too, the fastest target the
-     * aim could hold would be the band's average rather than the setting, and anything quicker
-     * would walk away permanently however high the slider went.
+     * Eases a rate toward the goal's own speed plus a share of the gap, so a correction keeps up
+     * with a moving target and brakes into a still one. No floor: a rate under one mouse count
+     * snaps to nothing in the broker and carries in its remainder.
      */
     private static double ramp(double rate, double shaped, double hard, double error, double follow) {
-        rate = Math.min(rate, hard); // a lowered slider has to bite on this tick
+        rate = Math.min(rate, hard);
         double goal = Math.min(hard, follow + Math.min(shaped, error / BRAKE_TICKS));
         return Math.max(rate + (goal - rate) * (goal > rate ? ACCEL : DECEL), 0.0);
     }

@@ -39,7 +39,7 @@ import java.util.Set;
  * Per-slot preference lists of item keys ("registry:meta") or category keys ("@cat:Name"); the first
  * key is primary and later ones are fallbacks. Excluded items stop matching their category.
  */
-public class HotbarSetting extends AbstractItemPickerSetting {
+public class HotbarSetting extends Setting<Void> {
 
     public static final int SLOTS = 9;
 
@@ -94,7 +94,7 @@ public class HotbarSetting extends AbstractItemPickerSetting {
     private static boolean PALETTE_READY; // set when ensureBuilt finishes
 
     public HotbarSetting(final String name) {
-        super(name);
+        super(name, null);
         initSlots();
     }
 
@@ -227,12 +227,9 @@ public class HotbarSetting extends AbstractItemPickerSetting {
         return !isExcluded(keyOf(stack));
     }
 
-    @Override
-    public List<Category> getCategories() { return sharedCategories(); }
-
     public static List<Category> sharedCategories() { ensureBuilt(); return CATEGORIES; }
 
-    public Entry entryForKey(final String key) { ensureBuilt(); return BY_KEY.get(key); }
+    public static Entry entryForKey(final String key) { ensureBuilt(); return BY_KEY.get(key); }
 
     public ItemStack iconForKey(final String key) {
         if (isCategoryKey(key)) {

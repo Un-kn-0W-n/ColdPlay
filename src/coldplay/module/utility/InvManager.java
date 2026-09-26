@@ -42,7 +42,7 @@ public class InvManager extends Module {
 
     private final BooleanSetting autoHotbar = add(new BooleanSetting("AutoHotBar", false).describe("Sort your hotbar to the saved layout."));
     private final BooleanSetting hotbarInstant = add(new BooleanSetting("HotbarInstant", false).describe("Swap hotbar slots about a tick apart instead of waiting the Delay."));
-    private final HotbarSetting hotbar = add(new HotbarSetting("Layout").describe("Drag items/categories onto hotbar slots; ordered = primary then fallbacks. Right-click an item to exclude it."));
+    private final HotbarSetting hotbar = add(new HotbarSetting("Layout").describe("Opens the layout window. Pick an item or group, then a slot; later picks become fallbacks. Right-click an item to keep it out of its group."));
 
     private final BooleanSetting cleaner = add(new BooleanSetting("Cleaner", false).describe("Drop junk items out of your inventory."));
     private final BooleanSetting cleanerInstant = add(new BooleanSetting("CleanerInstant", false).describe("Throw junk about a tick apart instead of waiting the Delay."));
@@ -277,7 +277,7 @@ public class InvManager extends Module {
                     return rank;
                 }
             } else if (!hotbar.isExcluded(key)) {
-                HotbarSetting.Entry entry = hotbar.entryForKey(key);
+                HotbarSetting.Entry entry = HotbarSetting.entryForKey(key);
                 if (entry != null && stack.getItem() == entry.getIcon().getItem()
                         && (!entry.isSubtypes() || stack.getMetadata() == entry.getIcon().getMetadata())) {
                     return rank;

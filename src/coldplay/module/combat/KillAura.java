@@ -60,15 +60,15 @@ public class KillAura extends Module {
                     + " deg/tick however high this is set; with it off the turn simply runs at this speed. "
                     + "Slider changes apply immediately."));
     public final BooleanSetting humanize = add(new BooleanSetting("Humanize", true)
-            .describe("Shape the turn like a hand and keep every number inside what a hand can do. Shaping: "
-                    + "accelerate and brake, vary the speed tick to tick, carry pitch slower than yaw, wander the "
-                    + "aim point around the hitbox, throw past a distant target and correct back, pause briefly "
-                    + "once settled. Limits: turn no faster than " + (int) HumanLimits.TURN_RATE + " deg/tick, "
-                    + "reach no further than " + HumanLimits.REACH + " blocks including any Reach bonus, click no "
-                    + "faster than " + (int) HumanLimits.CPS_MAX + " CPS and never at one fixed cadence, wait a "
-                    + "reaction before turning to a new target, and swing on the beat even when the ray misses "
-                    + "rather than only ever landing hits. Off: none of this applies and the settings are used "
-                    + "exactly as configured, which is faster and trivial to spot."));
+            .describe("Aim like a hand and keep every number inside what recorded legit players do. Shaping: "
+                    + "hold or tremble while the look is inside the inner hitbox, correct in bursts once it drifts "
+                    + "toward an edge, move pitch far less than yaw, vary the speed tick to tick, throw past a "
+                    + "distant target and correct back. Limits: turn no faster than " + (int) HumanLimits.TURN_RATE
+                    + " deg/tick, reach no further than " + HumanLimits.REACH + " blocks including any Reach "
+                    + "bonus, click no faster than " + (int) HumanLimits.CPS_MAX + " CPS and never at one fixed "
+                    + "cadence, wait a reaction before turning to a new target, turn back to the camera by hand "
+                    + "once the target is gone, and swing on the beat even when the ray misses. Off: none of this "
+                    + "applies and the settings are used exactly as configured, which is faster and trivial to spot."));
     public final NumberSetting rotationRange = add(new NumberSetting("Rotation Range", 5.0, 1.0, 8.0, 0.1)
             .describe("Start aiming at targets within this distance (blocks); attacking still waits for Attack Range."));
     public final NumberSetting fov = add(new NumberSetting("FOV", 90.0, 10.0, 360.0, 1.0).describe("Only target within this view cone (degrees)."));
@@ -79,8 +79,8 @@ public class KillAura extends Module {
             .describe("Attack rate bounds (attacks per second); each attack delay is rolled between them."));
     public final NumberSetting range = add(new NumberSetting("Range", 4.0, 1.0, 6.0, 0.1).describe("Start attacking within this distance, in blocks."));
     public final ModeSetting raytrace = add(new ModeSetting("Raytrace", CENTER, CENTER, FIRST)
-            .describe("Aim point on the target hitbox, before the drift wanders off it. Center: middle. "
-                    + "First: point your look reaches first."));
+            .describe("Aim point on the target hitbox with Humanize off. Center: middle. "
+                    + "First: point your look reaches first. Humanize aims at the whole box instead."));
     private final HeaderSetting debugHeader = add(new HeaderSetting("Debug"));
     public final BooleanSetting render = add(new BooleanSetting("Render", false)
             .describe("Draw the aim raytrace: a line from your eyes to the targeted spot, marked with a tenth-of-a-block box, "
@@ -108,9 +108,7 @@ public class KillAura extends Module {
     private long lastSeenAt;
     /** The rates handed to the broker last tick; used only by the debug graph. */
     private double turnRate, pitchRate;
-    /** This tick's aim-point offset, shared by the aim and the tracer so they cannot disagree. */
-    private AimShaper.Drift drift = AimShaper.REST;
-    /** The target the hand is currently acquiring; a change here restarts the turn from rest. */
+    /** What the hand turns to, or the player itself while a humanized look walks back to the camera. */
     private Entity aimTarget;
     /** Whether {@link #shaper} is currently primed; toggling Humanize mid-fight restarts it. */
     private boolean shaping;
@@ -119,8 +117,11 @@ public class KillAura extends Module {
     private static final long WALL_GRACE_MS = 500;
     /** Shrinks the hitbox before aiming, so the aim point never sits exactly on an edge. */
     private static final double AIM_INSET = 0.05;
-    /** Fraction of the hitbox's angular size that still counts as "on target" for a rest. */
-    private static final double HOLD_MARGIN = 0.9;
+    // Share of the hitbox's angular half-size the hand is content anywhere inside.
+    private static final double COMFORT_YAW = 0.8;
+    private static final double COMFORT_PITCH = 0.9;
+    // Degrees from the camera at which a humanized return hands the last bit to the broker.
+    private static final double RELEASE = 2.0;
     private final KillAuraDebug debug = new KillAuraDebug(graphScale, rotationSpeed);
 
     // ---- Construction and lifecycle ----
@@ -347,53 +348,84 @@ public class KillAura extends Module {
             return;
         }
         Entity victim = target;
-        if (victim == null || victim.worldObj != mc.theWorld || paused(mc, player)) {
-            resetAim();
-            return;
-        }
-        if (!reacted(System.currentTimeMillis())) {
-            // Still reacting: request nothing, so the broker eases the spoof back toward the camera
-            // exactly as it would if no target had been found. The turn begins from rest when the
-            // window closes, because resetAim leaves aimTarget null and the hand is primed there.
+        if ((victim != null && victim.worldObj != mc.theWorld) || paused(mc, player)) {
             resetAim();
             return;
         }
         RotationManager rotations = RotationManager.getInstance();
-        // A new target, or Humanize flipped under us, restarts the hand. Priming draws randomness,
-        // so the unshaped path resets instead: with Humanize off the aim must be fully determined.
         boolean human = humanize.get();
-        if (aimTarget != victim || human != shaping) {
-            if (human) {
-                shaper.retarget();
+        if (victim == null || !reacted(System.currentTimeMillis())) {
+            // Left alone the broker slews back to the camera at one flat rate on both axes.
+            if (human && rotations.owns(this)) {
+                letGo(player, victim != null);
             } else {
-                shaper.reset();
+                resetAim();
             }
+            return;
+        }
+        // A new target, or Humanize flipped under us, restarts the hand.
+        if (aimTarget != victim || human != shaping) {
+            shaper.reset();
             aimTarget = victim;
             shaping = human;
         }
-        drift = human ? shaper.drift() : AimShaper.REST;
         Vec3 eyes = player.getPositionEyes(1.0F);
         AxisAlignedBB in = aimBox(victim.getEntityBoundingBox());
-        Vec3 aim = aimPoint(in, eyes);
-        float[] want = RotationManager.angleTo(eyes.xCoord, eyes.yCoord, eyes.zCoord,
-                aim.xCoord, aim.yCoord, aim.zCoord);
         if (!human) {
             // Straight at the hitbox at exactly the slider, both axes the same: no shaping at all.
+            Vec3 aim = aimPoint(in, eyes);
+            float[] want = RotationManager.angleTo(eyes.xCoord, eyes.yCoord, eyes.zCoord,
+                    aim.xCoord, aim.yCoord, aim.zCoord);
             turnRate = pitchRate = rotationSpeed.get();
             rotations.request(this, want[0], want[1], ResourcePriority.NORMAL, turnRate);
             return;
         }
 
-        // Shaping measures its error from the look actually on the wire, not from the camera the
-        // player is still steering with, or a silent aura would brake against the wrong distance.
+        // Aim at the middle of the box as seen from the eyes, which at close range sits well above
+        // its 3D centre, and let the hand rest anywhere in the inner part of it.
+        Vec3 c = in.getCenter();
+        float yaw = RotationManager.angleTo(eyes.xCoord, eyes.yCoord, eyes.zCoord, c.xCoord, c.yCoord, c.zCoord)[0];
+        float top = RotationManager.angleTo(eyes.xCoord, eyes.yCoord, eyes.zCoord, c.xCoord, in.maxY, c.zCoord)[1];
+        float bottom = RotationManager.angleTo(eyes.xCoord, eyes.yCoord, eyes.zCoord, c.xCoord, in.minY, c.zCoord)[1];
+        double flat = Math.max(Math.hypot(c.xCoord - eyes.xCoord, c.zCoord - eyes.zCoord), 0.5);
+        double yawBand = Math.toDegrees(Math.atan2((in.maxX - in.minX) * 0.5, flat)) * COMFORT_YAW;
+        double pitchBand = (bottom - top) * 0.5 * COMFORT_PITCH;
+        // Errors are measured from the look on the wire, not from the camera the player still steers.
         float fromYaw = rotations.isActive() ? rotations.getServerYaw() : player.rotationYaw;
         float fromPitch = rotations.isActive() ? rotations.getServerPitch() : player.rotationPitch;
-        boolean onTarget = onTarget(eyes, in, AimShaper.yawError(want[0], fromYaw),
-                AimShaper.pitchError(want[1], fromPitch));
-        // The shaper derives its whole cruising band from this ceiling, so a non-human ceiling
-        // buys a perfectly hand-shaped curve at a speed no wrist reaches. Clamp before shaping.
-        AimShaper.Step step = shaper.step(fromYaw, fromPitch, want[0], want[1],
-                HumanLimits.turnRate(rotationSpeed.get()), onTarget);
+        AimShaper.Step step = shaper.step(fromYaw, fromPitch, yaw, (top + bottom) * 0.5F,
+                HumanLimits.turnRate(rotationSpeed.get()), yawBand, pitchBand);
+        turnRate = step.yawRate;
+        pitchRate = step.pitchRate;
+        rotations.request(this, step.yaw, step.pitch, ResourcePriority.NORMAL, turnRate, pitchRate);
+    }
+
+    /**
+     * Humanized hand-off while there is nothing to aim at. A target still being noticed freezes the
+     * look where it is; with no target the look is turned back to the camera like any other turn,
+     * and the broker only takes over for the last {@link #RELEASE} degrees.
+     */
+    private void letGo(EntityPlayerSP player, boolean reacting) {
+        RotationManager rotations = RotationManager.getInstance();
+        float fromYaw = rotations.getServerYaw();
+        float fromPitch = rotations.getServerPitch();
+        if (reacting) {
+            resetAim();
+            rotations.request(this, fromYaw, fromPitch, ResourcePriority.NORMAL, 0.0);
+            return;
+        }
+        if (AimShaper.yawError(player.rotationYaw, fromYaw)
+                + AimShaper.pitchError(player.rotationPitch, fromPitch) < RELEASE) {
+            resetAim();
+            return;
+        }
+        if (aimTarget != player) {
+            shaper.reset();
+            aimTarget = player;
+            shaping = true;
+        }
+        AimShaper.Step step = shaper.step(fromYaw, fromPitch, player.rotationYaw, player.rotationPitch,
+                HumanLimits.turnRate(rotationSpeed.get()), 0.0, 0.0);
         turnRate = step.yawRate;
         pitchRate = step.pitchRate;
         rotations.request(this, step.yaw, step.pitch, ResourcePriority.NORMAL, turnRate, pitchRate);
@@ -403,7 +435,6 @@ public class KillAura extends Module {
         aimTarget = null;
         shaping = false;
         turnRate = pitchRate = 0.0;
-        drift = AimShaper.REST;
         shaper.reset();
     }
 
@@ -427,35 +458,12 @@ public class KillAura extends Module {
 
     // ---- Aim geometry ----
 
-    /** Would freezing here still leave the ray inside the target? A hand only rests once aimed. */
-    private static boolean onTarget(Vec3 eyes, AxisAlignedBB in, double yawError, double pitchError) {
-        Vec3 center = in.getCenter();
-        double dx = center.xCoord - eyes.xCoord;
-        double dy = center.yCoord - eyes.yCoord;
-        double dz = center.zCoord - eyes.zCoord;
-        double flat = Math.max(Math.sqrt(dx * dx + dz * dz), 0.5);
-        double reach = Math.sqrt(flat * flat + dy * dy);
-        return yawError < Math.toDegrees(Math.atan2((in.maxX - in.minX) * 0.5, flat)) * HOLD_MARGIN
-                && pitchError < Math.toDegrees(Math.atan2((in.maxY - in.minY) * 0.5, reach)) * HOLD_MARGIN;
-    }
-
     private static AxisAlignedBB aimBox(AxisAlignedBB box) {
         return box.contract(AIM_INSET, AIM_INSET, AIM_INSET);
     }
 
-    /**
-     * The point on the hitbox to aim at this tick: the raytrace base, nudged by the hand's current
-     * drift and pulled back inside the box. Reads {@link #drift} rather than taking it as an
-     * argument so the tracer and the aim cannot drift apart within a tick.
-     */
+    /** The Raytrace point on the hitbox. */
     private Vec3 aimPoint(AxisAlignedBB in, Vec3 eyes) {
-        Vec3 base = basePoint(in, eyes);
-        return in.closestPoint(base.addVector((in.maxX - in.minX) * drift.x,
-                (in.maxY - in.minY) * drift.y,
-                (in.maxZ - in.minZ) * drift.z));
-    }
-
-    private Vec3 basePoint(AxisAlignedBB in, Vec3 eyes) {
         Vec3 center = in.getCenter();
         if (FIRST.equals(raytrace.get())) {
             Vec3 look = RotationManager.getInstance().getServerLookVec();

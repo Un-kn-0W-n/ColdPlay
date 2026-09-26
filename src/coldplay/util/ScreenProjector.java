@@ -71,6 +71,30 @@ public final class ScreenProjector {
         return n;
     }
 
+    /** Only the edges of faces turned toward the viewer, so the box reads solid rather than as a wire cube. */
+    public int visibleEdges(AxisAlignedBB b, float[] out, int n) {
+        for (int i = 0; i < 8; i++) {
+            for (int k = 0; k < 3; k++) {
+                int j = i | (1 << k);
+                if (j != i && edgeSeen(b, i, k, viewerX, viewerY, viewerZ)) {
+                    n = segment(cx(b, i), cy(b, i), cz(b, i), cx(b, j), cy(b, j), cz(b, j), out, n);
+                }
+            }
+        }
+        return n;
+    }
+
+    /** The edge from corner i along axis k shows when either face it borders faces the viewer at x, y, z. */
+    public static boolean edgeSeen(AxisAlignedBB b, int i, int k, double x, double y, double z) {
+        return k != 0 && faceSeen(i & 1, x, b.minX, b.maxX)
+                || k != 1 && faceSeen(i & 2, y, b.minY, b.maxY)
+                || k != 2 && faceSeen(i & 4, z, b.minZ, b.maxZ);
+    }
+
+    private static boolean faceSeen(int side, double v, double min, double max) {
+        return side == 0 ? v < min : v > max;
+    }
+
     /** Points of the box's screen outline, clockwise, as x,y pairs; 0 when a corner is behind the camera. */
     public int hull(AxisAlignedBB b, float[] out) {
         float[] xs = new float[8];
