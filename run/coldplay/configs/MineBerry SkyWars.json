@@ -35,7 +35,7 @@
       "settings": {}
     },
     "KillAura": {
-      "enabled": true,
+      "enabled": false,
       "keyBind": 19,
       "settings": {
         "Players": true,
@@ -253,9 +253,11 @@
       }
     },
     "BlockAnimation": {
-      "enabled": false,
+      "enabled": true,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Mode": "1.7"
+      }
     },
     "HUD": {
       "enabled": true,
@@ -272,7 +274,9 @@
     "BlockCounter": {
       "enabled": true,
       "keyBind": 0,
-      "settings": {}
+      "settings": {
+        "Mode": "Halo"
+      }
     },
     "FullBright": {
       "enabled": true,
@@ -320,24 +324,22 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Mode": "Heads",
+        "Mode": "Triangle",
         "Size": 9.0,
         "Radius": 39.0,
-        "Labels": true,
         "Players": true,
         "Mobs": false,
         "Animals": false,
         "Invisible": true,
-        "Range": 256.0,
-        "Player Color": -1,
-        "Mob Color": -50116,
-        "Animal Color": -11477916
+        "Range": 256.0
       }
     },
     "NameTags": {
       "enabled": true,
       "keyBind": 0,
       "settings": {
+        "Items": true,
+        "Distance": true,
         "Players": true,
         "Mobs": false,
         "Animals": false,
@@ -349,11 +351,8 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
+        "Mode": "Tag",
         "Range": 80.0,
-        "Filled": true,
-        "Outline": true,
-        "Border Width": 2.0,
-        "Opacity": 81.0,
         "Color": -3626496
       }
     },
@@ -361,11 +360,8 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
+        "Mode": "Card",
         "Range": 80.0,
-        "Filled": true,
-        "Outline": true,
-        "Border Width": 2.0,
-        "Opacity": 81.0,
         "Color": -50116
       }
     },
@@ -373,10 +369,8 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
-        "Mode": "Outline",
+        "Mode": "Trail",
         "Color": -1184275,
-        "Border Width": 2.0,
-        "Opacity": 81.0,
         "Fade Duration": 1000.0,
         "Max Blocks": 64.0
       }
@@ -385,13 +379,9 @@
       "enabled": true,
       "keyBind": 0,
       "settings": {
+        "Mode": "Chips",
         "Range": 80.0,
-        "Filled": true,
-        "Outline": true,
-        "Border Width": 2.0,
-        "Opacity": 81.0,
-        "Color": -16711736,
-        "NameTag": true
+        "Color": -16711736
       }
     },
     "TargetHUD": {

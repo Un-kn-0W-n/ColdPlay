@@ -98,7 +98,7 @@ public class ClickGuiScreen extends GuiScreen {
             settingsPanel.render(mouseX, mouseY, scaleFactor);
             // overlays go above the cell fills
             settingsPanel.renderItems(mouseX, mouseY);
-            settingsPanel.renderDragGhost();
+            settingsPanel.renderLayoutWindow(mouseX, mouseY);
             settingsPanel.renderColorPicker(mouseX, mouseY);
         }
         drawSettingsButton(mouseX, mouseY);

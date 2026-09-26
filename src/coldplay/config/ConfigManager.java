@@ -40,6 +40,7 @@ public class ConfigManager {
     private int panelLayoutHeight;
     private GuiStyle guiStyle = GuiStyle.SMOKE;
     private int[] milkWindow; // top-left, null until the Milk window is first moved
+    private String profile; // last loaded or saved over, null if none
 
     public ConfigManager(HudState hudState) {
         this.hudState = hudState;
@@ -95,6 +96,7 @@ public class ConfigManager {
         codec.applyRoot(root, moduleManager, panelStates, hudState);
         guiStyle = codec.readGuiStyle(root);
         milkWindow = codec.readMilkWindow(root);
+        profile = codec.readProfile(root);
         // Panels and HUD anchors share the persisted reference screen size.
         panelLayoutWidth = hudState.getLayoutWidth();
         panelLayoutHeight = hudState.getLayoutHeight();
@@ -102,7 +104,7 @@ public class ConfigManager {
 
     public void save(ModuleManager moduleManager) {
         reflowPanels(hudState.getLayoutWidth(), hudState.getLayoutHeight());
-        rootStore.save(codec.encodeRoot(moduleManager, panelStates, hudState, guiStyle, milkWindow));
+        rootStore.save(codec.encodeRoot(moduleManager, panelStates, hudState, guiStyle, milkWindow, profile));
     }
 
     private File configsDir() {
@@ -142,23 +144,56 @@ public class ConfigManager {
         return names;
     }
 
+    public String getProfile() {
+        return profile;
+    }
+
+    /** The saved profile as written, an empty object if it cannot be read. */
+    public JsonObject readProfile(String name) {
+        return profileStore(name).load();
+    }
+
+    /** Millis of the last save, 0 if the file is gone. */
+    public long profileSavedAt(String name) {
+        return profileFile(name).lastModified();
+    }
+
     public boolean saveProfile(String name, ModuleManager moduleManager) {
-        return profileStore(name).save(codec.encodeProfile(moduleManager));
+        if (!profileStore(name).save(codec.encodeProfile(moduleManager))) {
+            return false;
+        }
+        profile = name;
+        return true;
     }
 
     public boolean loadProfile(String name, ModuleManager moduleManager) {
-        return profileFile(name).exists()
-                && codec.applyProfile(profileStore(name).load(), moduleManager);
+        if (!profileFile(name).exists() || !codec.applyProfile(profileStore(name).load(), moduleManager)) {
+            return false;
+        }
+        profile = name;
+        return true;
     }
 
     public boolean renameProfile(String oldName, String newName) {
         File source = profileFile(oldName);
         File target = profileFile(newName);
-        return source.exists() && !target.exists() && source.renameTo(target);
+        if (!source.exists() || target.exists() || !source.renameTo(target)) {
+            return false;
+        }
+        if (oldName.equalsIgnoreCase(profile)) {
+            profile = newName;
+        }
+        return true;
     }
 
     public boolean deleteProfile(String name) {
-        return profileFile(name).delete();
+        if (!profileFile(name).delete()) {
+            return false;
+        }
+        if (name.equalsIgnoreCase(profile)) {
+            profile = null;
+        }
+        return true;
     }
 
     /** Strips characters illegal in Windows/NTFS filenames and trailing dots/spaces. */

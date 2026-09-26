@@ -74,20 +74,34 @@ public final class HudState {
 
     /** Preserves distance to the nearest edge or center when projecting a scaled-GUI coordinate. */
     public static int reanchor(int value, int oldSize, int newSize) {
+        switch (zone(value, oldSize)) {
+            case 0:
+                return value;
+            case 1:
+                return newSize / 2 + (value - oldSize / 2);
+            default:
+                return newSize + (value - oldSize);
+        }
+    }
+
+    /** What a coordinate is anchored to: 0 the low edge, 1 the center, 2 the high edge. */
+    public static int zone(int value, int size) {
         int low = Math.abs(value);
-        int centre = Math.abs(value - oldSize / 2);
-        int high = Math.abs(value - oldSize);
+        int centre = Math.abs(value - size / 2);
+        int high = Math.abs(value - size);
         if (low <= centre && low <= high) {
-            return value;
+            return 0;
         }
-        if (centre <= high) {
-            return newSize / 2 + (value - oldSize / 2);
-        }
-        return newSize + (value - oldSize);
+        return centre <= high ? 1 : 2;
     }
 
     public void put(String name, int x, int y) {
         positions.put(name, new Position(x, y));
+    }
+
+    /** The element falls back to its default position on its next render. */
+    public void remove(String name) {
+        positions.remove(name);
     }
 
     public static NumberSetting scaleSetting(String name) {

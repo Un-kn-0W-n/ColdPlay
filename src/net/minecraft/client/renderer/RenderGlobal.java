@@ -209,7 +209,7 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
 	public Set chunksToUpdateForced = new LinkedHashSet();
 	private final Deque visibilityDeque = new ArrayDeque();
 	private List<ContainerLocalRenderInformation> renderInfosEntities = new ArrayList(1024);
-	private List renderInfosTileEntities = new ArrayList(1024);
+	private List<ContainerLocalRenderInformation> renderInfosTileEntities = new ArrayList(1024);
 	private final List renderInfosNormal = new ArrayList(1024);
 	private final List renderInfosEntitiesNormal = new ArrayList(1024);
 	private final List renderInfosTileEntitiesNormal = new ArrayList(1024);
@@ -763,7 +763,8 @@ public class RenderGlobal implements IWorldAccess, IResourceManagerReloadListene
 			RenderHelper.enableStandardItemLighting();
 			if (Reflector.ForgeTileEntity_hasFastRenderer.exists()) TileEntityRendererDispatcher.instance.preDrawBatch();
 			TileEntitySignRenderer.updateTextRenderDistance();
-			label1408: for (final ContainerLocalRenderInformation renderglobal$containerlocalrenderinformation1 : this.renderInfos) {
+			// ColdPlay: renderInfos skips sections with no block geometry, which hid a chest standing alone in one
+			label1408: for (final ContainerLocalRenderInformation renderglobal$containerlocalrenderinformation1 : this.renderInfosTileEntities) {
 				final List<TileEntity> list1 = renderglobal$containerlocalrenderinformation1.renderChunk.getCompiledChunk().getTileEntities();
 				if (!list1.isEmpty()) {
 					final Iterator iterator1 = list1.iterator();

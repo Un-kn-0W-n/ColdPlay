@@ -286,7 +286,7 @@ public class MilkGuiScreen extends GuiScreen {
                 selected.isEnabled(), Skin.MILK);
         settings.render(mouseX, mouseY, scaleFactor);
         settings.renderItems(mouseX, mouseY);
-        settings.renderDragGhost();
+        settings.renderLayoutWindow(mouseX, mouseY);
         settings.renderColorPicker(mouseX, mouseY);
     }
 

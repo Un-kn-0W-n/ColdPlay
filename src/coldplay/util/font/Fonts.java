@@ -23,6 +23,7 @@ public final class Fonts {
     public static final String GEIST_SEMIBOLD = "geist-semibold";
     public static final String GEIST_MONO = "geist-mono-regular";
     public static final String GEIST_MONO_MEDIUM = "geist-mono-medium";
+    public static final String GEIST_MONO_SEMIBOLD = "geist-mono-semibold";
     public static final String JAKARTA = "jakarta-regular";
     public static final String JAKARTA_MEDIUM = "jakarta-medium";
     public static final String JAKARTA_SEMIBOLD = "jakarta-semibold";

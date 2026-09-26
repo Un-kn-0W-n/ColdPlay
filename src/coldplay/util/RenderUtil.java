@@ -152,11 +152,6 @@ public final class RenderUtil {
         return rgba(r, g, b, 255);
     }
 
-    /** Red at 0.0 to green at 1.0, packed opaque. */
-    public static int lerpRedGreen(float fraction) {
-        return rgb(Math.round(255 * (1.0F - fraction)), Math.round(255 * fraction), 0);
-    }
-
     /** Filled rectangle as x/y/width/height rather than Gui's left/top/right/bottom. */
     public static void rect(float x, float y, float width, float height, int color) {
         Gui.drawRect((int) x, (int) y, (int) (x + width), (int) (y + height), color);
@@ -214,14 +209,6 @@ public final class RenderUtil {
         wr.pos(right, bottom, 0.0D).color(r, g, b, a).endVertex();
         wr.pos(right, top, 0.0D).color(r, g, b, a).endVertex();
         wr.pos(left, top, 0.0D).color(r, g, b, a).endVertex();
-    }
-
-    /** {@link #outline} into an open {@link #beginQuads()} buffer. */
-    public static void appendOutline(WorldRenderer wr, int left, int top, int right, int bottom, int thickness, int argb) {
-        appendRect(wr, left, top, right, top + thickness, argb);
-        appendRect(wr, left, bottom - thickness, right, bottom, argb);
-        appendRect(wr, left, top, left + thickness, bottom, argb);
-        appendRect(wr, right - thickness, top, right, bottom, argb);
     }
 
     public static final int SCROLL_THUMB_MIN = 14; // px
@@ -395,7 +382,7 @@ public final class RenderUtil {
     }
 
     /** One icon inside a {@link #beginItems()} bracket at {@code scale}x. */
-    public static void drawItemRaw(ItemStack stack, int x, int y, float scale) {
+    public static void drawItemRaw(ItemStack stack, float x, float y, float scale) {
         GlStateManager.pushMatrix();
         GlStateManager.translate(x, y, 0.0F);
         GlStateManager.scale(scale, scale, 1.0F);
@@ -404,7 +391,7 @@ public final class RenderUtil {
     }
 
     /** {@link #drawItem(ItemStack, int, int)} at {@code scale}x. */
-    public static void drawItem(ItemStack stack, int x, int y, float scale) {
+    public static void drawItem(ItemStack stack, float x, float y, float scale) {
         if (stack == null) {
             return;
         }

@@ -1,7 +1,6 @@
 package coldplay.gui.click;
 
 import coldplay.ColdPlay;
-import coldplay.gui.CustomTextInput;
 import coldplay.gui.GlassShader;
 import coldplay.gui.Icons;
 import coldplay.gui.Theme;
@@ -14,7 +13,6 @@ import coldplay.setting.ColorSetting;
 import coldplay.setting.HeaderSetting;
 import coldplay.setting.HotbarSetting;
 import coldplay.setting.ItemGridSetting;
-import coldplay.setting.ItemPicker;
 import coldplay.setting.ModeSetting;
 import coldplay.setting.NumberSetting;
 import coldplay.setting.RangeSetting;
@@ -30,7 +28,6 @@ import net.minecraft.util.MathHelper;
 
 import java.awt.Color;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -77,14 +74,12 @@ public class SettingsPanel {
     private static final int BED_CELL = 14;
     private static final int BED_GAP = 1;
 
-    private static final int HB_SEP = 4;
-
-    private static final int WIDGET_PAD = 4;
-    private static final int SEARCH_H = 16;
-    private static final int VIEW_ROWS = 6;
-    private static final int EXCLUDED_CLR = 0xFFD05555;
-    private static final int EXCLUDE_OVERLAY = 0xC8121212;
-    private static final int CLEAN_KEEP_CLR = 0xFF6FCF6F;
+    private static final int PREVIEW_ROW = 18; // hotbar preview strip under the Layout label
+    private static final float PREVIEW_H = 13.5F;
+    private static final float PREVIEW_GAP = 1.5F;
+    private static final float PILL_H = 13.5F;
+    private static final FontRef PILL = new FontRef(Fonts.GEIST, 7.875F);
+    private static final FontRef PILL_MILK = new FontRef(Fonts.JAKARTA, 7.875F);
 
     private static final int CP_PAD = 7;
     private static final int SB_SIZE = 72; // saturation/brightness square, px
@@ -136,13 +131,7 @@ public class SettingsPanel {
     private boolean draggingSB;
     private boolean draggingHue;
 
-    private int dragMouseX;
-    private int dragMouseY;
-
-    private ItemPicker searchingPicker;
-    private HotbarSetting draggingHotbar;
-    private String draggingKey;
-    private int cursorCounter;
+    private LayoutWindow layoutWindow; // null unless a Layout or Items row opened it
 
     /** One laid-out setting; a Milk chip run is a single row holding every boolean in it. */
     private static final class Row {
@@ -369,10 +358,7 @@ public class SettingsPanel {
             return bedGridHeight();
         }
         if (s instanceof HotbarSetting) {
-            return hotbarHeight((HotbarSetting) s);
-        }
-        if (s instanceof CleanerSetting) {
-            return cleanerHeight((CleanerSetting) s);
+            return skin.rowH + PREVIEW_ROW;
         }
         if (s instanceof HeaderSetting) {
             return skin.sectionH;
@@ -477,9 +463,12 @@ public class SettingsPanel {
         return true;
     }
 
-    /** Includes the color picker, which may extend outside the panel. */
+    /** Includes the color picker and the layout window, which sit outside the panel. */
     public boolean contains(int mouseX, int mouseY) {
         if (RenderUtil.hovered(mouseX, mouseY, x, y, width, getHeight())) {
+            return true;
+        }
+        if (layoutWindow != null && layoutWindow.contains(mouseX, mouseY)) {
             return true;
         }
         return activeColor != null && RenderUtil.hovered(mouseX, mouseY, cpX, cpY, cpW, cpH);
@@ -488,6 +477,9 @@ public class SettingsPanel {
     public String getTooltipAt(int mouseX, int mouseY) {
         if (activeColor != null && RenderUtil.hovered(mouseX, mouseY, cpX, cpY, cpW, cpH)) {
             return null;
+        }
+        if (layoutWindow != null && layoutWindow.contains(mouseX, mouseY)) {
+            return layoutWindow.getTooltipAt(mouseX, mouseY);
         }
         if (!bodyContains(mouseX, mouseY)) {
             return null;
@@ -565,74 +557,19 @@ public class SettingsPanel {
         return rowY + skin.rowH + (lz + BedGridSetting.MAX_RING) * (BED_CELL + BED_GAP);
     }
 
-    private int gridStripWidth() {
-        return GRID_COLS * CELL + (GRID_COLS - 1) * COL_GAP;
+    /** Nine preview cells span the Layout row under its label. */
+    private float previewW(Setting<?> s) {
+        return (right() - labelX(s) - (HotbarSetting.SLOTS - 1) * PREVIEW_GAP) / HotbarSetting.SLOTS;
     }
 
-    private int gridViewH() {
-        return VIEW_ROWS * CELL + (VIEW_ROWS - 1) * ROW_GAP;
-    }
-
-    private int pickerCatY(int rowY) {
-        return rowY + skin.rowH + WIDGET_PAD;
-    }
-
-    private int pickerSearchY(int rowY) {
-        return pickerCatY(rowY) + CELL + WIDGET_PAD;
-    }
-
-    private int pickerGridY(int rowY) {
-        return pickerSearchY(rowY) + SEARCH_H + WIDGET_PAD;
-    }
-
-    /** Fallback depth excludes the primary item in each slot. */
-    private int maxFallbacks(HotbarSetting hb) {
-        int maxF = 0;
-        for (List<String> slot : hb.getSlots()) {
-            maxF = Math.max(maxF, slot.size() - 1);
-        }
-        return maxF;
-    }
-
-    private int hotbarStripY(HotbarSetting hb, int rowY) {
-        if (hb.getOpenCategory() >= 0) {
-            return pickerGridY(rowY) + gridViewH() + WIDGET_PAD;
-        }
-        return pickerCatY(rowY) + CELL + HB_SEP;
-    }
-
-    private int hotbarHeight(HotbarSetting hb) {
-        if (!hb.isWidgetOpen()) {
-            return skin.rowH;
-        }
-        int stripTop = hotbarStripY(hb, 0); // relative to the row top
-        int stripH = CELL + maxFallbacks(hb) * (CELL + ROW_GAP);
-        return stripTop + stripH + WIDGET_PAD;
-    }
-
-    private int cleanerHeight(CleanerSetting cg) {
-        if (!cg.isWidgetOpen()) {
-            return skin.rowH;
-        }
-        if (cg.getOpenCategory() < 0) {
-            return pickerCatY(0) + CELL + WIDGET_PAD;
-        }
-        return pickerGridY(0) + gridViewH() + WIDGET_PAD;
-    }
-
-    private int maxRowFor(ItemPicker picker) {
-        return Math.max(0, rowsFor(picker.getFilteredEntries().size()) - VIEW_ROWS);
-    }
-
-    private int rowOffsetFor(ItemPicker picker) {
-        return MathHelper.clamp_int((int) Math.round(picker.getScroll()), 0, maxRowFor(picker));
+    private float previewX(Setting<?> s, int slot) {
+        return labelX(s) + slot * (previewW(s) + PREVIEW_GAP);
     }
 
     // ---- Rendering ----
 
     /** Content stays at its final position; the dock animation only clips it. */
     public void render(int mouseX, int mouseY, int scaleFactor) {
-        cursorCounter++;
         lastScaleFactor = scaleFactor;
         layout();
         clampBodyScroll();
@@ -724,9 +661,10 @@ public class SettingsPanel {
         } else if (s instanceof BedGridSetting) {
             drawBedGrid((BedGridSetting) s, rowY, mouseX, mouseY);
         } else if (s instanceof HotbarSetting) {
-            drawHotbar((HotbarSetting) s, rowY, mouseX, mouseY);
+            drawEditRow(s, rowY, isEditing(false));
+            drawPreview(s, rowY);
         } else if (s instanceof CleanerSetting) {
-            drawCleaner((CleanerSetting) s, rowY, mouseX, mouseY);
+            drawEditRow(s, rowY, isEditing(true));
         } else if (s instanceof HeaderSetting) {
             drawSection(s, rowY, row.height);
         } else if (s instanceof ButtonSetting) {
@@ -938,227 +876,55 @@ public class SettingsPanel {
         return null;
     }
 
-    private void drawWidgetHeader(Setting<?> s, int rowY, boolean open) {
-        drawLabel(s, rowY, skin.rowH, right() - CHEVRON);
-        Icons.draw(open ? Icons.Icon.CHEVRON_DOWN : Icons.Icon.CHEVRON_RIGHT, right() - CHEVRON,
-                rowY + (skin.rowH - CHEVRON) / 2.0F, CHEVRON, 3.0F, skin.mute);
+    /** Label plus an Edit pill for the layout window; the pill reads Editing while its tab is showing. */
+    private void drawEditRow(Setting<?> s, int rowY, boolean editing) {
+        CustomFont font = (milk ? PILL_MILK : PILL).get();
+        String text = editing ? "Editing" : "Edit";
+        float pw = 4.5F + font.getStringWidth(text) + 3.0F + 6.0F + 4.5F;
+        float px = right() - pw;
+        float py = rowY + (skin.rowH - PILL_H) / 2.0F;
+        drawLabel(s, rowY, skin.rowH, px);
+        int ink = editing ? skin.accent : (milk ? skin.dim : 0xB3FFFFFF);
+        if (editing) {
+            int fill = (skin.accent & 0x00FFFFFF) | 0x38000000;
+            GlassShader.rect(px, py, pw, PILL_H, 3.0F, fill, fill);
+        }
+        GlassShader.stroke(px, py, pw, PILL_H, 3.0F, editing ? skin.accent : (milk ? skin.fieldLine : 0x33FFFFFF));
+        font.drawString(text, px + 4.5F, py + (PILL_H - font.getHeight()) / 2.0F, ink);
+        Icons.draw(Icons.Icon.ARROW_UP_RIGHT, px + pw - 10.5F, py + (PILL_H - 6.0F) / 2.0F, 6.0F, 3.4F, ink);
     }
 
-    private void drawPickerCell(int cx, int cy, int fill, int frame) {
-        GlassShader.rect(cx, cy, CELL, CELL, CELL_RADIUS, fill, fill);
-        GlassShader.stroke(cx, cy, CELL, CELL, CELL_RADIUS, frame);
-    }
-
-    private interface PickerActions {
-        void category(int category, int button);
-        void entry(HotbarSetting.Entry entry, int button);
-    }
-
-    /** Layout and hit-testing shared by the hotbar and cleaner pickers. */
-    private final class ItemPickerWidget {
-        private final ItemPicker picker;
-        private final int rowY;
-
-        private ItemPickerWidget(ItemPicker picker, int rowY) {
-            this.picker = picker;
-            this.rowY = rowY;
-        }
-
-        void drawFrames(int mouseX, int mouseY, java.util.function.ToIntBiFunction<String, Boolean> stateFrame) {
-            int catY = pickerCatY(rowY);
-            List<HotbarSetting.Category> categories = picker.getCategories();
-            for (int i = 0; i < categories.size(); i++) {
-                int cx = colX(i);
-                boolean open = i == picker.getOpenCategory();
-                boolean hover = RenderUtil.hovered(mouseX, mouseY, cx, catY, CELL, CELL);
-                int frame = open ? skin.accent : stateFrame.applyAsInt(HotbarSetting.categoryRef(i), hover);
-                drawPickerCell(cx, catY, open ? (skin.accent & 0x00FFFFFF) | 0x38000000 : skin.field, frame);
-            }
-            if (picker.getOpenCategory() < 0) {
-                return;
-            }
-            Widgets.field(skin.label.get(), colX(0), pickerSearchY(rowY), gridStripWidth(), SEARCH_H,
-                    picker.getSearch(), searchingPicker == picker, "Search items...", cursorCounter, skin);
-            for (VisibleCell cell : visibleCells()) {
-                boolean hover = RenderUtil.hovered(mouseX, mouseY, cell.x, cell.y, CELL, CELL);
-                drawPickerCell(cell.x, cell.y, skin.field, stateFrame.applyAsInt(cell.entry.getKey(), hover));
-            }
-        }
-
-        void drawIcons() {
-            int catY = pickerCatY(rowY);
-            List<HotbarSetting.Category> categories = picker.getCategories();
-            for (int i = 0; i < categories.size(); i++) {
-                RenderUtil.drawItem(categories.get(i).getIcon(), colX(i) + 1, catY + 1);
-            }
-            if (picker.getOpenCategory() < 0) {
-                return;
-            }
-            for (VisibleCell cell : visibleCells()) {
-                RenderUtil.drawItem(cell.entry.getIcon(), cell.x + 1, cell.y + 1);
-            }
-        }
-
-        /** False when the click landed outside the shared picker areas. */
-        boolean click(int button, int mouseX, int mouseY, PickerActions actions) {
-            if (RenderUtil.hovered(mouseX, mouseY, x, rowY, width, skin.rowH)) {
-                picker.setWidgetOpen(!picker.isWidgetOpen());
-                return true;
-            }
-            if (!picker.isWidgetOpen()) {
-                return true;
-            }
-            int category = categoryAt(mouseX, mouseY);
-            if (category >= 0) {
-                actions.category(category, button);
-                return true;
-            }
-            if (searchContains(mouseX, mouseY)) {
-                searchingPicker = picker;
-                cursorCounter = 0;
-                return true;
-            }
-            HotbarSetting.Entry entry = gridEntryAt(mouseX, mouseY);
-            if (entry != null) {
-                actions.entry(entry, button);
-                return true;
-            }
-            return false;
-        }
-
-        int categoryAt(int mouseX, int mouseY) {
-            int catY = pickerCatY(rowY);
-            List<HotbarSetting.Category> categories = picker.getCategories();
-            for (int i = 0; i < categories.size(); i++) {
-                if (RenderUtil.hovered(mouseX, mouseY, colX(i), catY, CELL, CELL)) {
-                    return i;
-                }
-            }
-            return -1;
-        }
-
-        boolean searchContains(int mouseX, int mouseY) {
-            return picker.getOpenCategory() >= 0
-                    && RenderUtil.hovered(mouseX, mouseY, colX(0), pickerSearchY(rowY), gridStripWidth(), SEARCH_H);
-        }
-
-        boolean gridContains(int mouseX, int mouseY) {
-            return picker.getOpenCategory() >= 0
-                    && RenderUtil.hovered(mouseX, mouseY, colX(0), pickerGridY(rowY), gridStripWidth(), gridViewH());
-        }
-
-        HotbarSetting.Entry gridEntryAt(int mouseX, int mouseY) {
-            for (VisibleCell cell : visibleCells()) {
-                if (RenderUtil.hovered(mouseX, mouseY, cell.x, cell.y, CELL, CELL)) {
-                    return cell.entry;
-                }
-            }
-            return null;
-        }
-
-        private List<VisibleCell> visibleCells() {
-            return visibleCellsFor(picker, rowY);
-        }
-    }
-
-    private List<VisibleCell> visibleCellsFor(ItemPicker picker, int rowY) {
-        int category = picker.getOpenCategory();
-        if (category < 0) {
-            return Collections.emptyList();
-        }
-        List<HotbarSetting.Entry> filtered = picker.getFilteredEntries();
-        int firstIndex = rowOffsetFor(picker) * GRID_COLS;
-        int visibleCount = MathHelper.clamp_int(filtered.size() - firstIndex, 0, VIEW_ROWS * GRID_COLS);
-        List<VisibleCell> cells = new ArrayList<VisibleCell>(visibleCount);
-        int gridY = pickerGridY(rowY);
-        for (int visibleIndex = 0; visibleIndex < visibleCount; visibleIndex++) {
-            int row = visibleIndex / GRID_COLS;
-            int column = visibleIndex % GRID_COLS;
-            cells.add(new VisibleCell(filtered.get(firstIndex + visibleIndex),
-                    colX(column), gridY + row * (CELL + ROW_GAP)));
-        }
-        return cells;
-    }
-
-    private static final class VisibleCell {
-        private final HotbarSetting.Entry entry;
-        private final int x;
-        private final int y;
-
-        private VisibleCell(HotbarSetting.Entry entry, int x, int y) {
-            this.entry = entry;
-            this.x = x;
-            this.y = y;
-        }
-    }
-
-    private void drawHotbar(HotbarSetting hb, int rowY, int mouseX, int mouseY) {
-        drawWidgetHeader(hb, rowY, hb.isWidgetOpen());
-        if (!hb.isWidgetOpen()) {
-            return;
-        }
-        new ItemPickerWidget(hb, rowY).drawFrames(mouseX, mouseY, (key, hover) ->
-                hb.isExcluded(key) ? EXCLUDED_CLR : (hover ? skin.dim : skin.fieldLine));
-        // hotbar strip: each slot is a vertical stack (primary on top, fallbacks below)
-        int stripY = hotbarStripY(hb, rowY);
-        List<List<String>> slots = hb.getSlots();
+    private void drawPreview(Setting<?> s, int rowY) {
+        float cw = previewW(s);
         for (int i = 0; i < HotbarSetting.SLOTS; i++) {
-            int cx = colX(i);
-            List<String> list = slots.get(i);
-            if (list.isEmpty()) {
-                drawPickerCell(cx, stripY, skin.field, skin.fieldLine);
-                skin.label.get().drawCenteredInRect("+", cx, stripY, CELL, CELL, skin.mute);
-            } else {
-                for (int k = 0; k < list.size(); k++) {
-                    int cy = stripY + k * (CELL + ROW_GAP);
-                    boolean isCat = HotbarSetting.isCategoryKey(list.get(k));
-                    int fill = k == 0 ? (skin.accent & 0x00FFFFFF) | 0x38000000 : skin.field;
-                    drawPickerCell(cx, cy, fill, (isCat || k == 0) ? skin.accent : skin.fieldLine);
-                }
+            GlassShader.rect(previewX(s, i), rowY + skin.rowH, cw, PREVIEW_H, 2.25F, skin.hover, skin.hover);
+            GlassShader.stroke(previewX(s, i), rowY + skin.rowH, cw, PREVIEW_H, 2.25F, skin.fieldLine);
+        }
+    }
+
+    private boolean isEditing(boolean cleanerTab) {
+        return layoutWindow != null && layoutWindow.isCleanerTab() == cleanerTab;
+    }
+
+    /** Opens the window on that tab, switches to it, or closes the window when that tab is already showing. */
+    private void toggleLayoutWindow(boolean cleanerTab) {
+        if (isEditing(cleanerTab)) {
+            layoutWindow = null;
+        } else if (layoutWindow != null) {
+            layoutWindow.showTab(cleanerTab);
+        } else {
+            layoutWindow = new LayoutWindow(skin, setting(HotbarSetting.class), setting(CleanerSetting.class),
+                    cleanerTab, () -> layoutWindow = null);
+        }
+    }
+
+    private <T> T setting(Class<T> type) {
+        for (Setting<?> s : module.getSettings()) {
+            if (type.isInstance(s)) {
+                return type.cast(s);
             }
         }
-    }
-
-    private void drawCleaner(CleanerSetting cg, int rowY, int mouseX, int mouseY) {
-        drawWidgetHeader(cg, rowY, cg.isWidgetOpen());
-        if (!cg.isWidgetOpen()) {
-            return;
-        }
-        new ItemPickerWidget(cg, rowY).drawFrames(mouseX, mouseY, (key, hover) -> {
-            CleanerSetting.CleanerMode m = cg.getMode(key);
-            return m != null ? modeColor(m) : (hover ? skin.dim : skin.fieldLine);
-        });
-    }
-
-    private int modeColor(CleanerSetting.CleanerMode m) {
-        switch (m) {
-            case DROP:
-                return EXCLUDED_CLR;
-            case KEEP_ONE:
-                return CLEAN_KEEP_CLR;
-            default:
-                return skin.dim;
-        }
-    }
-
-    private String modeLetter(CleanerSetting.CleanerMode m) {
-        switch (m) {
-            case DROP:
-                return "D";
-            case KEEP_ONE:
-                return "K";
-            default:
-                return "I";
-        }
-    }
-
-    private void drawModeBadge(CustomFont font, CleanerSetting.CleanerMode m, int cx, int cy) {
-        String letter = modeLetter(m);
-        int lw = font.getStringWidth(letter);
-        float tx = cx + CELL - lw - 1;
-        float ty = cy + 1;
-        font.drawString(letter, tx + 0.6f, ty + 0.6f, 0xFF000000);
-        font.drawString(letter, tx, ty, modeColor(m));
+        return null;
     }
 
     /** Drawn after render so item icons sit above the cell frames. */
@@ -1176,97 +942,30 @@ public class SettingsPanel {
                     RenderUtil.drawItem(entries.get(i).getIcon(), colX(i) + 1, cellY(rowY, i) + 1);
                 }
             } else if (s instanceof HotbarSetting) {
-                renderHotbarItems((HotbarSetting) s, rowY);
-            } else if (s instanceof CleanerSetting) {
-                renderCleanerItems((CleanerSetting) s, rowY);
+                renderPreviewItems((HotbarSetting) s, rowY);
             }
         }
         RenderUtil.endScissor();
     }
 
-    private void renderHotbarItems(HotbarSetting hb, int rowY) {
-        if (!hb.isWidgetOpen()) {
-            return;
-        }
-        new ItemPickerWidget(hb, rowY).drawIcons();
-        List<HotbarSetting.Entry> filtered = null;
-        int rowOffset = 0;
-        int gridY = 0;
-        if (hb.getOpenCategory() >= 0) {
-            filtered = hb.getFilteredEntries();
-            rowOffset = rowOffsetFor(hb);
-            gridY = pickerGridY(rowY);
-        }
-        int stripY = hotbarStripY(hb, rowY);
+    private void renderPreviewItems(HotbarSetting hb, int rowY) {
+        float inset = (previewW(hb) - 9.0F) / 2.0F;
         List<List<String>> slots = hb.getSlots();
+        RenderUtil.beginItems();
         for (int i = 0; i < HotbarSetting.SLOTS; i++) {
-            List<String> list = slots.get(i);
-            for (int k = 0; k < list.size(); k++) {
-                RenderUtil.drawItem(hb.iconForKey(list.get(k)), colX(i) + 1, stripY + k * (CELL + ROW_GAP) + 1);
+            if (!slots.get(i).isEmpty()) {
+                RenderUtil.drawItemRaw(hb.iconForKey(slots.get(i).get(0)), previewX(hb, i) + inset,
+                        rowY + skin.rowH + (PREVIEW_H - 9.0F) / 2.0F, 0.5625F);
             }
         }
-        // overlays go on top of the icons
-        if (filtered != null) {
-            for (int r = 0; r < VIEW_ROWS; r++) {
-                for (int c = 0; c < GRID_COLS; c++) {
-                    int idx = (rowOffset + r) * GRID_COLS + c;
-                    if (idx >= filtered.size() || !hb.isExcluded(filtered.get(idx).getKey())) {
-                        continue;
-                    }
-                    GlassShader.rect(colX(c), gridY + r * (CELL + ROW_GAP), CELL, CELL, CELL_RADIUS,
-                            EXCLUDE_OVERLAY, EXCLUDE_OVERLAY);
-                }
-            }
-        }
-        for (int i = 0; i < HotbarSetting.SLOTS; i++) {
-            List<String> list = slots.get(i);
-            int cx = colX(i);
-            for (int k = 0; k < list.size(); k++) {
-                if (!HotbarSetting.isCategoryKey(list.get(k))) {
-                    continue;
-                }
-                RenderUtil.rect(cx + CELL - 4, stripY + k * (CELL + ROW_GAP) + 1, 3, 3, skin.accent);
-            }
-        }
+        RenderUtil.endItems();
     }
 
-    private void renderCleanerItems(CleanerSetting cg, int rowY) {
-        if (!cg.isWidgetOpen()) {
-            return;
-        }
-        new ItemPickerWidget(cg, rowY).drawIcons();
-        CustomFont font = skin.value.get();
-        int catY = pickerCatY(rowY);
-        List<HotbarSetting.Category> cats = cg.getCategories();
-        for (int i = 0; i < cats.size(); i++) {
-            CleanerSetting.CleanerMode m = cg.getMode(HotbarSetting.categoryRef(i));
-            if (m != null) {
-                drawModeBadge(font, m, colX(i), catY);
-            }
-        }
-        if (cg.getOpenCategory() < 0) {
-            return;
-        }
-        List<HotbarSetting.Entry> filtered = cg.getFilteredEntries();
-        int rowOffset = rowOffsetFor(cg);
-        int gridY = pickerGridY(rowY);
-        for (int r = 0; r < VIEW_ROWS; r++) {
-            for (int c = 0; c < GRID_COLS; c++) {
-                int idx = (rowOffset + r) * GRID_COLS + c;
-                if (idx >= filtered.size()) {
-                    continue;
-                }
-                CleanerSetting.CleanerMode m = cg.getMode(filtered.get(idx).getKey());
-                if (m != null) {
-                    drawModeBadge(font, m, colX(c), gridY + r * (CELL + ROW_GAP));
-                }
-            }
-        }
-    }
-
-    public void renderDragGhost() {
-        if (draggingHotbar != null && draggingKey != null) {
-            RenderUtil.drawItem(draggingHotbar.iconForKey(draggingKey), dragMouseX - 8, dragMouseY - 8);
+    /** The window sits beside the panel, placed each frame so it follows a dragged panel. */
+    public void renderLayoutWindow(int mouseX, int mouseY) {
+        if (layoutWindow != null) {
+            layoutWindow.place(x, width, y, screen.width, screen.height);
+            layoutWindow.render(mouseX, mouseY);
         }
     }
 
@@ -1274,6 +973,10 @@ public class SettingsPanel {
     public boolean closeOverlay() {
         if (activeColor != null) {
             activeColor = null;
+            return true;
+        }
+        if (layoutWindow != null) {
+            layoutWindow = null;
             return true;
         }
         return false;
@@ -1366,6 +1069,13 @@ public class SettingsPanel {
             activeColor = null;
             return true;
         }
+        if (layoutWindow != null) {
+            if (layoutWindow.contains(mouseX, mouseY)) {
+                layoutWindow.mouseClicked(mouseX, mouseY, button);
+                return true;
+            }
+            layoutWindow.unfocus();
+        }
 
         layout();
         clampBodyScroll();
@@ -1391,7 +1101,6 @@ public class SettingsPanel {
         if (!bodyContains(mouseX, mouseY)) {
             return true;
         }
-        searchingPicker = null;
         Row row = rowAt(mouseY);
         if (row != null) {
             handleClick(row, button, mouseX, mouseY, bodyTopY() + row.top);
@@ -1446,10 +1155,10 @@ public class SettingsPanel {
                     save();
                 }
             }
-        } else if (s instanceof HotbarSetting) {
-            handleHotbarPickerClick((HotbarSetting) s, button, mouseX, mouseY, rowY);
-        } else if (s instanceof CleanerSetting) {
-            handleCleanerClick((CleanerSetting) s, button, mouseX, mouseY, rowY);
+        } else if (s instanceof HotbarSetting || s instanceof CleanerSetting) {
+            if (button == 0) {
+                toggleLayoutWindow(s instanceof CleanerSetting);
+            }
         } else if (s instanceof ButtonSetting) {
             if (button == 0) {
                 ((ButtonSetting) s).run();
@@ -1482,84 +1191,16 @@ public class SettingsPanel {
         save();
     }
 
-    private void handleHotbarPickerClick(final HotbarSetting hotbar, int button,
-                                         final int mouseX, final int mouseY, int rowY) {
-        boolean handled = new ItemPickerWidget(hotbar, rowY)
-                .click(button, mouseX, mouseY, new PickerActions() {
-            @Override
-            public void category(int category, int clickedButton) {
-                if (clickedButton == 0) {
-                    beginHotbarDrag(hotbar, HotbarSetting.categoryRef(category), mouseX, mouseY);
-                } else {
-                    hotbar.setOpenCategory(hotbar.getOpenCategory() == category ? -1 : category);
-                    save();
-                }
-            }
-
-            @Override
-            public void entry(HotbarSetting.Entry entry, int clickedButton) {
-                if (clickedButton == 0) {
-                    beginHotbarDrag(hotbar, entry.getKey(), mouseX, mouseY);
-                } else {
-                    hotbar.toggleItem(entry.getKey());
-                    save();
-                }
-            }
-        });
-        if (handled) {
+    public void drag(int mouseX, int mouseY, int screenWidth, int screenHeight) {
+        if (layoutWindow != null && layoutWindow.drag(mouseX, mouseY, screenWidth, screenHeight)) {
             return;
         }
-        int[] slotItem = hbSlotItemAt(hotbar, rowY, mouseX, mouseY);
-        if (slotItem != null && button == 1) {
-            hotbar.removeFromSlot(slotItem[0], hotbar.getSlots().get(slotItem[0]).get(slotItem[1]));
-            save();
-        }
-    }
-
-    private void handleCleanerClick(final CleanerSetting cleaner, int button,
-                                    int mouseX, int mouseY, int rowY) {
-        new ItemPickerWidget(cleaner, rowY).click(button, mouseX, mouseY, new PickerActions() {
-            @Override
-            public void category(int category, int clickedButton) {
-                if (clickedButton == 1) {
-                    cleaner.setOpenCategory(cleaner.getOpenCategory() == category ? -1 : category);
-                } else {
-                    cleaner.cycle(HotbarSetting.categoryRef(category));
-                }
-                save();
-            }
-
-            @Override
-            public void entry(HotbarSetting.Entry entry, int clickedButton) {
-                if (clickedButton == 0) {
-                    cleaner.cycle(entry.getKey());
-                } else {
-                    cleaner.cycleBack(entry.getKey());
-                }
-                save();
-            }
-        });
-    }
-
-    private void beginHotbarDrag(HotbarSetting hb, String key, int mouseX, int mouseY) {
-        draggingHotbar = hb;
-        draggingKey = key;
-        dragMouseX = mouseX;
-        dragMouseY = mouseY;
-    }
-
-    public void drag(int mouseX, int mouseY, int screenWidth, int screenHeight) {
         if (draggingSB) {
             updateSB(mouseX, mouseY);
             return;
         }
         if (draggingHue) {
             updateHue(mouseY);
-            return;
-        }
-        if (draggingHotbar != null) {
-            dragMouseX = mouseX;
-            dragMouseY = mouseY;
             return;
         }
         if (draggingBodyScroll) {
@@ -1614,45 +1255,9 @@ public class SettingsPanel {
             draggingRange = null;
             save();
         }
-        if (draggingHotbar != null && draggingKey != null) {
-            finishHotbarDrag();
-            draggingHotbar = null;
-            draggingKey = null;
+        if (layoutWindow != null) {
+            layoutWindow.mouseReleased();
         }
-    }
-
-    /** Dropping on a hotbar column binds the key; dropping back on the source cell acts as a click. */
-    private void finishHotbarDrag() {
-        int rowY = rowYOf(draggingHotbar);
-        if (rowY < 0) {
-            return;
-        }
-        int col = hbSlotColAt(draggingHotbar, rowY, dragMouseX, dragMouseY);
-        if (col != -1) {
-            draggingHotbar.dropOnSlot(col, draggingKey);
-            save();
-        } else if (HotbarSetting.isCategoryKey(draggingKey)) {
-            int cat = new ItemPickerWidget(draggingHotbar, rowY).categoryAt(dragMouseX, dragMouseY);
-            if (cat != -1 && HotbarSetting.categoryRef(cat).equals(draggingKey)) {
-                draggingHotbar.setOpenCategory(draggingHotbar.getOpenCategory() == cat ? -1 : cat);
-                save();
-            }
-        } else {
-            HotbarSetting.Entry ge = new ItemPickerWidget(draggingHotbar, rowY).gridEntryAt(dragMouseX, dragMouseY);
-            if (ge != null && ge.getKey().equals(draggingKey)) {
-                draggingHotbar.toggleItem(draggingKey);
-                save();
-            }
-        }
-    }
-
-    private int rowYOf(Setting<?> target) {
-        for (Row row : rows) {
-            if (row.setting == target) {
-                return bodyTopY() + row.top;
-            }
-        }
-        return -1;
     }
 
     private int gridCellAt(int rowY, int count, int mouseX, int mouseY) {
@@ -1664,67 +1269,23 @@ public class SettingsPanel {
         return -1;
     }
 
-    private int hbSlotColAt(HotbarSetting hb, int rowY, int mouseX, int mouseY) {
-        int stripY = hotbarStripY(hb, rowY);
-        int stripH = CELL + maxFallbacks(hb) * (CELL + ROW_GAP);
-        for (int i = 0; i < HotbarSetting.SLOTS; i++) {
-            if (RenderUtil.hoveredExclusive(mouseX, mouseY, colX(i), stripY, CELL, stripH)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    /** {slot, itemIndex} under the cursor, or null. */
-    private int[] hbSlotItemAt(HotbarSetting hb, int rowY, int mouseX, int mouseY) {
-        int col = hbSlotColAt(hb, rowY, mouseX, mouseY);
-        if (col < 0) {
-            return null;
-        }
-        int stripY = hotbarStripY(hb, rowY);
-        int k = (mouseY - stripY) / (CELL + ROW_GAP);
-        if (k < 0 || k >= hb.getSlots().get(col).size()) {
-            return null;
-        }
-        return new int[]{col, k};
-    }
-
     public boolean isSearching() {
-        return searchingPicker != null;
+        return layoutWindow != null && layoutWindow.isSearching();
     }
 
     public void charTyped(char typedChar, int keyCode) {
-        if (searchingPicker == null) {
-            return;
-        }
-        String cur = searchingPicker.getSearch();
-        CustomTextInput.EditResult edit = CustomTextInput.edit(cur, typedChar, keyCode, -1);
-        if (!edit.isFocused()) {
-            searchingPicker = null;
-        } else if (edit.isChanged()) {
-            searchingPicker.setSearch(edit.getValue());
-            save();
-        }
+        layoutWindow.charTyped(typedChar, keyCode);
     }
 
     public void scroll(int dWheel, int mouseX, int mouseY) {
+        if (layoutWindow != null && layoutWindow.contains(mouseX, mouseY)) {
+            layoutWindow.scroll(dWheel, mouseX, mouseY);
+            return;
+        }
         layout();
         clampBodyScroll();
         if (!bodyContains(mouseX, mouseY)) {
             return;
-        }
-        int top = bodyTopY();
-        for (Row row : rows) {
-            if (row.setting instanceof ItemPicker) {
-                ItemPicker picker = (ItemPicker) row.setting;
-                if (picker.isWidgetOpen() && new ItemPickerWidget(picker, top + row.top).gridContains(mouseX, mouseY)) {
-                    int maxRow = maxRowFor(picker);
-                    double next = picker.getScroll() + (dWheel > 0 ? -1 : 1);
-                    picker.setScroll(MathHelper.clamp_double(next, 0.0D, (double) maxRow));
-                    save();
-                    return;
-                }
-            }
         }
         if (maxBodyScroll() > 0) {
             int delta = dWheel > 0 ? -BODY_SCROLL_STEP : BODY_SCROLL_STEP;
